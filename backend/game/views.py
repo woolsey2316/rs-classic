@@ -1,0 +1,255 @@
+from django.contrib.auth.models import User
+from rest_framework import permissions, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from .models import Equipment, GroundItem, InventorySlot, Player
+from .serializers import (
+    EquipSerializer,
+    GroundItemSerializer,
+    PlayerSerializer,
+    PositionSerializer,
+    RegisterSerializer,
+    TakeSerializer,
+    UnequipSerializer,
+)
+from .world import WORLD
+
+
+def get_player(user: User) -> Player:
+    player, _ = Player.objects.get_or_create(
+        user=user,
+        defaults={"display_name": user.username},
+    )
+    player.ensure_skills()
+    player.ensure_inventory()
+    player.ensure_equipment()
+    return player
+
+
+class RegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+        player = get_player(user)
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "player": PlayerSerializer(player).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MeView(APIView):
+    def get(self, request):
+        player = get_player(request.user)
+        return Response(PlayerSerializer(player).data)
+
+
+class PlayerStateView(APIView):
+    def get(self, request):
+        player = get_player(request.user)
+        return Response(PlayerSerializer(player).data)
+
+
+class PositionView(APIView):
+    def patch(self, request):
+        serializer = PositionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        x = serializer.validated_data["x"]
+        y = serializer.validated_data["y"]
+
+        if not WORLD.is_walkable(x, y):
+            return Response(
+                {"detail": "That tile cannot be walked on."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        player = get_player(request.user)
+        # Only allow moving to an adjacent tile (or same) to reduce teleport cheating.
+        dx = abs(player.x - x)
+        dy = abs(player.y - y)
+        if dx > 1 or dy > 1:
+            return Response(
+                {"detail": "Move one step at a time."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        player.x = x
+        player.y = y
+        player.save(update_fields=["x", "y", "updated_at"])
+        return Response({"x": player.x, "y": player.y})
+
+
+class WorldView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        data = WORLD.to_dict()
+        data["ground_items"] = GroundItemSerializer(
+            GroundItem.objects.select_related("item").all(),
+            many=True,
+        ).data
+        return Response(data)
+
+
+class EquipView(APIView):
+    def post(self, request):
+        serializer = EquipSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        player = get_player(request.user)
+
+        try:
+            inv = player.inventory_slots.select_related("item").get(
+                slot_index=serializer.validated_data["slot_index"]
+            )
+        except InventorySlot.DoesNotExist:
+            return Response({"detail": "Invalid slot."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not inv.item or not inv.item.equip_slot:
+            return Response(
+                {"detail": "That item cannot be equipped."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        equip_slot = inv.item.equip_slot
+        equipment, _ = Equipment.objects.get_or_create(player=player, slot=equip_slot)
+
+        # Swap currently worn item back into this inventory slot.
+        previous_item = equipment.item
+        previous_qty = equipment.quantity
+
+        equipment.item = inv.item
+        equipment.quantity = inv.quantity
+        equipment.save(update_fields=["item", "quantity"])
+
+        if previous_item:
+            inv.item = previous_item
+            inv.quantity = previous_qty or 1
+        else:
+            inv.item = None
+            inv.quantity = 0
+        inv.save(update_fields=["item", "quantity"])
+
+        return Response(PlayerSerializer(player).data)
+
+
+class UnequipView(APIView):
+    def post(self, request):
+        serializer = UnequipSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        player = get_player(request.user)
+
+        try:
+            equipment = player.equipment.select_related("item").get(
+                slot=serializer.validated_data["slot"]
+            )
+        except Equipment.DoesNotExist:
+            return Response({"detail": "Invalid slot."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not equipment.item:
+            return Response(
+                {"detail": "Nothing equipped there."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        empty = (
+            player.inventory_slots.filter(item__isnull=True)
+            .order_by("slot_index")
+            .first()
+        )
+        if not empty:
+            return Response(
+                {"detail": "Inventory is full."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        empty.item = equipment.item
+        empty.quantity = equipment.quantity or 1
+        empty.save(update_fields=["item", "quantity"])
+        equipment.clear()
+
+        return Response(PlayerSerializer(player).data)
+
+
+class DropView(APIView):
+    """Remove an inventory item permanently (no ground item yet)."""
+
+    def post(self, request):
+        serializer = EquipSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        player = get_player(request.user)
+
+        try:
+            inv = player.inventory_slots.select_related("item").get(
+                slot_index=serializer.validated_data["slot_index"]
+            )
+        except InventorySlot.DoesNotExist:
+            return Response({"detail": "Invalid slot."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not inv.item:
+            return Response(
+                {"detail": "That slot is empty."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        inv.clear()
+        return Response(PlayerSerializer(player).data)
+
+
+class TakeView(APIView):
+    """Pick up a ground item into the first empty inventory slot."""
+
+    def post(self, request):
+        serializer = TakeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        player = get_player(request.user)
+
+        try:
+            ground = GroundItem.objects.select_related("item").get(
+                pk=serializer.validated_data["ground_item_id"]
+            )
+        except GroundItem.DoesNotExist:
+            return Response(
+                {"detail": "That item is no longer there."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if player.x != ground.x or player.y != ground.y:
+            return Response(
+                {"detail": "You need to walk over to it first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        empty = (
+            player.inventory_slots.filter(item__isnull=True)
+            .order_by("slot_index")
+            .first()
+        )
+        if not empty:
+            return Response(
+                {"detail": "Your inventory is full."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        empty.item = ground.item
+        empty.quantity = ground.quantity or 1
+        empty.save(update_fields=["item", "quantity"])
+        ground.delete()
+
+        return Response(
+            {
+                "player": PlayerSerializer(player).data,
+                "ground_items": GroundItemSerializer(
+                    GroundItem.objects.select_related("item").all(),
+                    many=True,
+                ).data,
+            }
+        )

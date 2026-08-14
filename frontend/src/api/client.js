@@ -1,0 +1,94 @@
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+function getToken() {
+  return localStorage.getItem("rsc_access");
+}
+
+export async function api(path, { method = "GET", body, token } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  const auth = token ?? getToken();
+  if (auth) {
+    headers.Authorization = `Bearer ${auth}`;
+  }
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail =
+      data.detail ||
+      data.username?.[0] ||
+      data.password?.[0] ||
+      Object.values(data).flat?.()?.[0] ||
+      "Request failed";
+    throw new Error(typeof detail === "string" ? detail : "Request failed");
+  }
+  return data;
+}
+
+export async function login(username, password) {
+  return api("/api/auth/login/", {
+    method: "POST",
+    body: { username, password },
+    token: null,
+  });
+}
+
+export async function register(username, password, displayName) {
+  return api("/api/auth/register/", {
+    method: "POST",
+    body: {
+      username,
+      password,
+      display_name: displayName || username,
+    },
+    token: null,
+  });
+}
+
+export async function fetchMe() {
+  return api("/api/auth/me/");
+}
+
+export async function fetchWorld() {
+  return api("/api/world/");
+}
+
+export async function patchPosition(x, y) {
+  return api("/api/player/position/", {
+    method: "PATCH",
+    body: { x, y },
+  });
+}
+
+export async function equipItem(slotIndex) {
+  return api("/api/inventory/equip/", {
+    method: "POST",
+    body: { slot_index: slotIndex },
+  });
+}
+
+export async function unequipItem(slot) {
+  return api("/api/inventory/unequip/", {
+    method: "POST",
+    body: { slot },
+  });
+}
+
+export async function dropItem(slotIndex) {
+  return api("/api/inventory/drop/", {
+    method: "POST",
+    body: { slot_index: slotIndex },
+  });
+}
+
+export async function takeItem(groundItemId) {
+  return api("/api/world/take/", {
+    method: "POST",
+    body: { ground_item_id: groundItemId },
+  });
+}
