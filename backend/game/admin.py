@@ -5,7 +5,7 @@ from .models import Equipment, GroundItem, InventorySlot, Item, Player, PlayerSk
 
 @admin.register(Item)
 class ItemAdmin(admin.ModelAdmin):
-    list_display = ("name", "key", "equip_slot", "stackable")
+    list_display = ("name", "key", "equip_slot", "stackable", "sprite")
     search_fields = ("name", "key")
 
 

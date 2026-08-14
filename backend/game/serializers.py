@@ -17,7 +17,7 @@ from .xp import XP_TABLE, xp_to_next_level
 class ItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = Item
-        fields = ("id", "key", "name", "description", "stackable", "equip_slot", "color")
+        fields = ("id", "key", "name", "description", "stackable", "equip_slot", "color", "sprite")
 
 
 class PlayerSkillSerializer(serializers.ModelSerializer):

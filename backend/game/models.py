@@ -77,6 +77,7 @@ class Item(models.Model):
         null=True,
     )
     color = models.CharField(max_length=7, default="#c4a574")
+    sprite = models.CharField(max_length=64, blank=True, default="")
 
     class Meta:
         ordering = ["name"]
