@@ -265,6 +265,9 @@ export default function GamePage() {
         <div className="player-meta">
           <span>{player.display_name}</span>
           <span className="muted">@{player.username}</span>
+          <a className="ghost-btn landscape-link" href="/landscape-3d">
+            3D map
+          </a>
           <button type="button" className="ghost-btn" onClick={() => refreshPlayer()}>
             Sync
           </button>

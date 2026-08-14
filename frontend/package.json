@@ -13,7 +13,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.2.0",
-    "rsc-sprite-generator": "file:../../rsc-sprite-generator"
+    "rsc-sprite-generator": "file:../../rsc-sprite-generator",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

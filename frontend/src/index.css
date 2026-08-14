@@ -263,6 +263,78 @@ input {
   font-size: 0.85rem;
 }
 
+.landscape-link,
+.landscape-back {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.landscape-page {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: #101710;
+}
+
+.landscape-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.1rem;
+  background: rgba(26, 20, 14, 0.96);
+  border-bottom: 1px solid var(--border);
+}
+
+.landscape-toolbar .brand,
+.landscape-toolbar h1 {
+  margin: 0;
+}
+
+.landscape-toolbar h1 {
+  margin-top: 0.15rem;
+  font-family: "Cinzel", serif;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.landscape-help {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.landscape-3d {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.landscape-3d-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.landscape-3d-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.landscape-3d-message {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  background: #101710;
+}
+
 .game-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;

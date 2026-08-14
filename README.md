@@ -18,6 +18,7 @@ docker compose up --build
 ```
 
 - Frontend: http://localhost:5173
+- 3D RSC landscape: http://localhost:5173/landscape-3d
 - API: http://localhost:8000/api/
 - Admin: http://localhost:8000/admin/ (create a superuser with the command below)
 
@@ -57,6 +58,12 @@ docker-compose.yml
 
 - Movement is tile-based: click a walkable tile, the client pathfinds, then syncs each step to the API.
 - Equipable starter gear is in the inventory after sign-up — open **Inventory**, click an item, then check **Equipment**.
+- Regenerate the 3D Lumbridge terrain after changing the landscape archives:
+
+```bash
+cd frontend/src/landscape
+nix-shell ../../shell.nix --run "node landscape.cjs"
+```
 
 ## dependencies
 ```
