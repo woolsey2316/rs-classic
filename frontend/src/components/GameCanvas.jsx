@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useItemSprites } from "../game/itemSprites";
 
 const TILE = 32;
 
@@ -67,57 +68,21 @@ function drawPlayer(ctx, px, py, facing) {
   if (facing === "up") ctx.fillRect(px + 15, py + 4, 2, 3);
 }
 
-function drawBronzeDagger(ctx, px, py) {
-  ctx.save();
-  ctx.translate(px + 16, py + 20);
-  ctx.rotate(-0.85);
-
+function drawGroundItem(ctx, ground, img, px, py) {
   ctx.fillStyle = "rgba(0,0,0,0.28)";
   ctx.beginPath();
-  ctx.ellipse(1, 4, 10, 3.5, 0.3, 0, Math.PI * 2);
+  ctx.ellipse(px + 16, py + 26, 8, 3, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = "#d4a05a";
+  if (img) {
+    ctx.drawImage(img, px + 2, py + 2, 28, 28);
+    return;
+  }
+
+  ctx.fillStyle = ground.item?.color || "#c4a574";
   ctx.beginPath();
-  ctx.moveTo(0, -12);
-  ctx.lineTo(3.2, 5);
-  ctx.lineTo(-3.2, 5);
-  ctx.closePath();
+  ctx.arc(px + 16, py + 18, 5, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.fillStyle = "#f0c888";
-  ctx.beginPath();
-  ctx.moveTo(0, -11);
-  ctx.lineTo(1.1, 5);
-  ctx.lineTo(-0.2, 5);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = "#8a5a28";
-  ctx.lineWidth = 0.6;
-  ctx.beginPath();
-  ctx.moveTo(0, -10);
-  ctx.lineTo(0, 5);
-  ctx.stroke();
-
-  ctx.fillStyle = "#6e4a28";
-  ctx.fillRect(-5.5, 5, 11, 2.4);
-
-  ctx.fillStyle = "#b87333";
-  ctx.fillRect(-4.5, 5.4, 9, 1.4);
-
-  ctx.fillStyle = "#5a3a1c";
-  ctx.fillRect(-1.6, 7.2, 3.2, 7);
-
-  ctx.fillStyle = "#8b5a2b";
-  ctx.fillRect(-1.1, 8, 2.2, 5.5);
-
-  ctx.fillStyle = "#c08a4a";
-  ctx.beginPath();
-  ctx.arc(0, 15.2, 2.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
 }
 
 export default function GameCanvas({
@@ -131,6 +96,7 @@ export default function GameCanvas({
   const canvasRef = useRef(null);
   const [hover, setHover] = useState(null);
   const groundItems = world?.ground_items || [];
+  const sprites = useItemSprites(groundItems.map((g) => g.item));
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -173,14 +139,7 @@ export default function GameCanvas({
     for (const ground of groundItems) {
       const px = ground.x * TILE;
       const py = ground.y * TILE;
-      if (ground.item?.key === "bronze_dagger") {
-        drawBronzeDagger(ctx, px, py);
-      } else {
-        ctx.fillStyle = ground.item?.color || "#c4a574";
-        ctx.beginPath();
-        ctx.arc(px + 16, py + 18, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      drawGroundItem(ctx, ground, sprites[ground.item?.sprite], px, py);
     }
 
     if (destination) {
@@ -216,7 +175,7 @@ export default function GameCanvas({
       ctx.lineTo(width, y * TILE);
       ctx.stroke();
     }
-  }, [world, playerPos, facing, destination, hover, groundItems]);
+  }, [world, playerPos, facing, destination, hover, groundItems, sprites]);
 
   function tileFromEvent(e) {
     const canvas = canvasRef.current;

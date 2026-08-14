@@ -1,3 +1,5 @@
+import ItemIcon from "./ItemIcon";
+
 export default function InventoryPanel({ inventory, onEquip, onContextMenu }) {
   const slots = Array.from({ length: 30 }, (_, i) => {
     return inventory?.find((s) => s.slot_index === i) || { slot_index: i, item: null, quantity: 0 };
@@ -34,8 +36,7 @@ export default function InventoryPanel({ inventory, onEquip, onContextMenu }) {
             >
               {item ? (
                 <>
-                  <span className="item-swatch" style={{ background: item.color }} />
-                  <span className="item-label">{item.name.split(" ").pop()}</span>
+                  <ItemIcon item={item} />
                   {slot.quantity > 1 && <span className="item-qty">{slot.quantity}</span>}
                 </>
               ) : null}

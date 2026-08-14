@@ -1,3 +1,5 @@
+import ItemIcon from "./ItemIcon";
+
 const SLOT_ORDER = [
   { key: "helmet", label: "Helmet" },
   { key: "arrows", label: "Arrows" },
@@ -37,7 +39,7 @@ export default function EquipmentPanel({ equipment, onUnequip }) {
               <span className="equip-label">{label}</span>
               {item ? (
                 <span className="equip-item">
-                  <span className="item-swatch" style={{ background: item.color }} />
+                  <ItemIcon item={item} className="equip-icon" />
                   {item.name}
                   {slot.quantity > 1 ? ` x${slot.quantity}` : ""}
                 </span>

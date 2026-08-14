@@ -9,9 +9,11 @@
     "preview": "vite preview --host 0.0.0.0 --port 5173"
   },
   "dependencies": {
+    "@2003scape/rsc-landscape": "^2.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.2.0"
+    "react-router-dom": "^7.2.0",
+    "rsc-sprite-generator": "file:../../rsc-sprite-generator"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

@@ -57,3 +57,14 @@ docker-compose.yml
 
 - Movement is tile-based: click a walkable tile, the client pathfinds, then syncs each step to the API.
 - Equipable starter gear is in the inventory after sign-up — open **Inventory**, click an item, then check **Equipment**.
+
+## dependencies
+```
+git clone git@github.com:2003scape/rsc-sprite-generator.git
+cd rsc-sprite-generator
+npm install
+npm link
+cd ./path/to/rs-classic/frontend
+npm install ../../rsc-sprite-generator
+```
+Then, in your main application directory, you can just run npm link rsc-sprite-generator to start using it.

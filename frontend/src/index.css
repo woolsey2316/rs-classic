@@ -420,6 +420,20 @@ input {
   width: 14px;
   height: 14px;
   border: 1px solid rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+}
+
+.item-icon {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+.item-icon.equip-icon {
+  width: 28px;
+  height: 28px;
 }
 
 .item-label {
