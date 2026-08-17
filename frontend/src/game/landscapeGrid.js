@@ -141,8 +141,12 @@ export function tileInfo(data, x, z) {
 export function toGameCoords(data, x, z) {
   const bounds = data?.sectorBounds;
   if (!bounds) return { x, y: z };
+  // Sector columns run east→west, so undo that flip before rebuilding the
+  // game's x coordinate from the sector and the tile within it.
+  const column = Math.floor(x / 48);
+  const sectorX = bounds.maxX - column;
   return {
-    x: x + (bounds.minX - 48) * 48,
+    x: (x - column * 48) + (sectorX - 48) * 48,
     y: z + (bounds.minY - 36) * 48 - 48 + (bounds.plane || 0) * 944,
   };
 }

@@ -71,7 +71,10 @@ function export3dRegion({
             const sector = landscape.sectors[sectorX][sectorY][plane];
             if (!sector) continue;
 
-            const offsetX = (sectorX - minSectorX) * sectorSize;
+            // RSC's sector x axis points west (sectors[x - 1] is the eastern
+            // neighbour), so lay the columns out in descending sector order to
+            // keep west on the left, the way the game's own map is drawn.
+            const offsetX = (maxSectorX - sectorX) * sectorSize;
             const offsetZ = (sectorY - minSectorY) * sectorSize;
 
             for (let x = 0; x < sectorSize; x += 1) {
