@@ -84,9 +84,74 @@ function buildWalls(data) {
   return geometry;
 }
 
-export default function Landscape3D({ src = "/landscape/lumbridge-3d.json" }) {
+function makePlayerMarker() {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.28, 0.9, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffe066 }),
+  );
+  body.position.y = 0.5;
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.2, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xfff2b0 }),
+  );
+  head.position.y = 1.05;
+  const feet = new THREE.Mesh(
+    new THREE.RingGeometry(0.28, 0.42, 20),
+    new THREE.MeshBasicMaterial({
+      color: 0xffe066,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthTest: false,
+    }),
+  );
+  feet.rotation.x = -Math.PI / 2;
+  feet.position.y = 0.05;
+  feet.renderOrder = 2;
+  group.add(body, head, feet);
+  return group;
+}
+
+function makeTileMarker(colour) {
+  const marker = new THREE.Mesh(
+    new THREE.RingGeometry(0.3, 0.48, 24),
+    new THREE.MeshBasicMaterial({
+      color: colour,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthTest: false,
+    }),
+  );
+  marker.rotation.x = -Math.PI / 2;
+  marker.renderOrder = 2;
+  marker.visible = false;
+  return marker;
+}
+
+/**
+ * Renders the exported RSC region. Pointer events are resolved by raycasting
+ * against the terrain mesh, so callbacks receive landscape tile coordinates
+ * (`{x, z}`) rather than screen coordinates; `screen` is passed separately
+ * purely so callers can position a menu at the cursor.
+ */
+export default function Landscape3D({
+  src = "/landscape/lumbridge-3d.json",
+  playerPos = null,
+  destination = null,
+  selectedTile = null,
+  onLoad,
+  onTileClick,
+  onTileContextMenu,
+}) {
   const hostRef = useRef(null);
+  const viewRef = useRef(null);
+  const handlersRef = useRef({});
   const [message, setMessage] = useState("Loading RSC landscape…");
+  const [ready, setReady] = useState(0);
+
+  handlersRef.current = { onLoad, onTileClick, onTileContextMenu };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -96,6 +161,7 @@ export default function Landscape3D({ src = "/landscape/lumbridge-3d.json" }) {
     let frame = 0;
     let renderer;
     let controls;
+    let detachPointer = () => {};
     const resources = [];
 
     async function start() {
@@ -153,6 +219,14 @@ export default function Landscape3D({ src = "/landscape/lumbridge-3d.json" }) {
         scene.add(new THREE.LineSegments(wallGeometry, wallMaterial));
         resources.push(wallGeometry, wallMaterial);
 
+        const player = makePlayerMarker();
+        player.visible = false;
+        scene.add(player);
+
+        const destinationMarker = makeTileMarker(0xffffff);
+        const selectionMarker = makeTileMarker(0x8ce27a);
+        scene.add(destinationMarker, selectionMarker);
+
         const hemisphere = new THREE.HemisphereLight(0xe6f4ff, 0x44552e, 2.2);
         scene.add(hemisphere);
 
@@ -166,6 +240,62 @@ export default function Landscape3D({ src = "/landscape/lumbridge-3d.json" }) {
         sun.shadow.camera.bottom = -80;
         scene.add(sun);
 
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+
+        function pickTile(event) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          if (!rect.width || !rect.height) return null;
+          pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+          raycaster.setFromCamera(pointer, camera);
+          const hit = raycaster.intersectObject(terrain, false)[0];
+          if (!hit) return null;
+          return {
+            x: Math.max(0, Math.min(data.width - 1, Math.floor(hit.point.x))),
+            z: Math.max(0, Math.min(data.depth - 1, Math.floor(hit.point.z))),
+          };
+        }
+
+        let pressedAt = null;
+
+        const onPointerDown = (event) => {
+          pressedAt = event.button === 0
+            ? { x: event.clientX, y: event.clientY }
+            : null;
+        };
+
+        const onPointerUp = (event) => {
+          if (event.button !== 0 || !pressedAt) return;
+          const dragged =
+            Math.abs(event.clientX - pressedAt.x) > 4 ||
+            Math.abs(event.clientY - pressedAt.y) > 4;
+          pressedAt = null;
+          if (dragged) return;
+          const tile = pickTile(event);
+          if (tile) handlersRef.current.onTileClick?.(tile);
+        };
+
+        const onContextMenu = (event) => {
+          event.preventDefault();
+          const tile = pickTile(event);
+          handlersRef.current.onTileContextMenu?.(
+            tile
+              ? { tile, screen: { x: event.clientX, y: event.clientY } }
+              : null,
+          );
+        };
+
+        const canvas = renderer.domElement;
+        canvas.addEventListener("pointerdown", onPointerDown);
+        canvas.addEventListener("pointerup", onPointerUp);
+        canvas.addEventListener("contextmenu", onContextMenu);
+        detachPointer = () => {
+          canvas.removeEventListener("pointerdown", onPointerDown);
+          canvas.removeEventListener("pointerup", onPointerUp);
+          canvas.removeEventListener("contextmenu", onContextMenu);
+        };
+
         const resize = () => {
           const width = Math.max(1, host.clientWidth);
           const height = Math.max(1, host.clientHeight);
@@ -178,7 +308,18 @@ export default function Landscape3D({ src = "/landscape/lumbridge-3d.json" }) {
         resizeObserver.observe(host);
         resources.push({ dispose: () => resizeObserver.disconnect() });
 
+        viewRef.current = {
+          data,
+          player,
+          destinationMarker,
+          selectionMarker,
+          controls,
+        };
+
         setMessage("");
+        setReady((value) => value + 1);
+        handlersRef.current.onLoad?.(data);
+
         const render = () => {
           if (disposed) return;
           controls.update();
@@ -196,12 +337,53 @@ export default function Landscape3D({ src = "/landscape/lumbridge-3d.json" }) {
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
+      detachPointer();
       controls?.dispose();
       renderer?.dispose();
       resources.forEach((resource) => resource.dispose());
+      viewRef.current = null;
       host.replaceChildren();
     };
   }, [src]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const { data, player, destinationMarker, selectionMarker } = view;
+
+    if (playerPos) {
+      player.visible = true;
+      player.position.set(
+        playerPos.x + 0.5,
+        heightAt(data, playerPos.x, playerPos.z),
+        playerPos.z + 0.5,
+      );
+    } else {
+      player.visible = false;
+    }
+
+    if (destination) {
+      destinationMarker.visible = true;
+      destinationMarker.position.set(
+        destination.x + 0.5,
+        heightAt(data, destination.x, destination.z) + 0.06,
+        destination.z + 0.5,
+      );
+    } else {
+      destinationMarker.visible = false;
+    }
+
+    if (selectedTile) {
+      selectionMarker.visible = true;
+      selectionMarker.position.set(
+        selectedTile.x + 0.5,
+        heightAt(data, selectedTile.x, selectedTile.z) + 0.08,
+        selectedTile.z + 0.5,
+      );
+    } else {
+      selectionMarker.visible = false;
+    }
+  }, [playerPos, destination, selectedTile, ready]);
 
   return (
     <div className="landscape-3d">

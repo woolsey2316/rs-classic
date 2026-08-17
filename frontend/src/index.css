@@ -270,9 +270,8 @@ input {
 }
 
 .landscape-page {
+  position: relative;
   height: 100vh;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   background: #101710;
 }
@@ -308,10 +307,35 @@ input {
 }
 
 .landscape-3d {
-  position: relative;
-  width: 100%;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
+}
+
+.landscape-hud {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: rgba(26, 20, 14, 0.86);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+}
+
+.landscape-region {
+  font-family: "Cinzel", serif;
+  font-size: 0.9rem;
+}
+
+.landscape-status {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 0.85rem;
 }
 
 .landscape-3d-canvas {
@@ -370,7 +394,13 @@ input {
 }
 
 .side-panels {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: flex;
+  height: 250px;
+  width: 350px;
+  overflow: scroll;
   flex-direction: column;
   gap: 0.75rem;
   min-height: 0;
