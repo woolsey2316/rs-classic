@@ -97,6 +97,22 @@ export async function chopTree(sceneryId, playerX, playerY) {
   });
 }
 
+export async function fetchTreasureChestContents(sceneryId) {
+  return api(`/api/world/treasure-chest/${sceneryId}/`);
+}
+
+export async function takeFromTreasureChest(sceneryId, itemKey, playerX, playerY) {
+  return api("/api/world/treasure-chest/take/", {
+    method: "POST",
+    body: {
+      scenery_id: sceneryId,
+      item_key: itemKey,
+      player_x: playerX,
+      player_y: playerY,
+    },
+  });
+}
+
 export async function fetchScenery({ minX, maxX, minY, maxY }) {
   const params = new URLSearchParams({
     min_x: String(minX),

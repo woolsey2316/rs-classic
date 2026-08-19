@@ -231,6 +231,7 @@ class Scenery(models.Model):
     x = models.PositiveIntegerField()
     y = models.PositiveIntegerField()
     direction = models.PositiveSmallIntegerField(default=0)
+    is_treasure_chest = models.BooleanField(default=False)
 
     class Meta:
         indexes = [

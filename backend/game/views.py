@@ -4,18 +4,21 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Equipment, GroundItem, InventorySlot, Player, Scenery, SceneryKind
+from .models import Equipment, GroundItem, InventorySlot, Item, Player, Scenery, SceneryKind
 from .serializers import (
     ChopSerializer,
     EquipSerializer,
     GroundItemSerializer,
+    ItemSerializer,
     PlayerSerializer,
     PositionSerializer,
     RegisterSerializer,
     SceneryKindSerializer,
     TakeSerializer,
+    TreasureChestTakeSerializer,
     UnequipSerializer,
 )
+from .treasure_chest import take_from_treasure_chest
 from .woodcutting import attempt_chop
 from .world import WORLD
 
@@ -300,6 +303,57 @@ class ChopView(APIView):
         return Response(payload)
 
 
+class TreasureChestContentsView(APIView):
+    """List every item available from a treasure chest."""
+
+    def get(self, request, scenery_id: int):
+        try:
+            chest = Scenery.objects.get(pk=scenery_id, is_treasure_chest=True)
+        except Scenery.DoesNotExist:
+            return Response(
+                {"detail": "That is not a treasure chest."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        items = Item.objects.all().order_by("name")
+        return Response(
+            {
+                "scenery_id": chest.id,
+                "name": chest.kind.name,
+                "description": chest.kind.description,
+                "items": ItemSerializer(items, many=True).data,
+            }
+        )
+
+
+class TreasureChestTakeView(APIView):
+    """Take one copy of an item from the treasure chest into player inventory."""
+
+    def post(self, request):
+        serializer = TreasureChestTakeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        player = get_player(request.user)
+
+        result = take_from_treasure_chest(
+            player,
+            serializer.validated_data["scenery_id"],
+            serializer.validated_data["item_key"],
+            serializer.validated_data["player_x"],
+            serializer.validated_data["player_y"],
+        )
+
+        if not result.get("ok"):
+            return Response({"detail": result["message"]}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "player": PlayerSerializer(player).data,
+                "message": result["message"],
+                "item_key": result["item_key"],
+            }
+        )
+
+
 class WorldSceneryView(APIView):
     """Scenery definitions and placements inside a world-coordinate bbox."""
 
@@ -338,6 +392,7 @@ class WorldSceneryView(APIView):
                         "x": obj.x,
                         "y": obj.y,
                         "direction": obj.direction,
+                        "is_treasure_chest": obj.is_treasure_chest,
                     }
                     for obj in placements
                 ],

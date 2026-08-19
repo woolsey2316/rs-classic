@@ -167,6 +167,13 @@ class ChopSerializer(serializers.Serializer):
     player_y = serializers.IntegerField()
 
 
+class TreasureChestTakeSerializer(serializers.Serializer):
+    scenery_id = serializers.IntegerField(min_value=1)
+    item_key = serializers.SlugField(max_length=64)
+    player_x = serializers.IntegerField()
+    player_y = serializers.IntegerField()
+
+
 class PositionSerializer(serializers.Serializer):
     x = serializers.IntegerField(min_value=0, max_value=63)
     y = serializers.IntegerField(min_value=0, max_value=63)

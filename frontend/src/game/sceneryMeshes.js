@@ -106,6 +106,7 @@ function styleFor(kind) {
   if (hay.includes("fire")) return "fire";
   if (hay.includes("mill")) return "mill";
   if (hay.includes("log")) return "logs";
+  if (model.includes("chest")) return "chest";
   if (hay.includes("candle")) return "candle";
   return "generic";
 }
@@ -319,6 +320,13 @@ function makeStyle(kit, style, objectId) {
       return assemble(kit, [
         mesh(geos.cylinder, mats.bark, 0, 0.12, 0, 0.22, 0.7, 0.22),
         mesh(geos.cylinder, mats.barkDark, 0.08, 0.28, 0.05, 0.2, 0.65, 0.2),
+      ]);
+    case "chest":
+      return assemble(kit, [
+        mesh(geos.box, mats.wood, 0, 0.22, 0, 0.72, 0.44, 0.52),
+        mesh(geos.box, mats.woodLight, 0, 0.46, -0.28, 0.72, 0.08, 0.08),
+        mesh(geos.box, mats.metal, 0, 0.28, -0.28, 0.14, 0.14, 0.06),
+        mesh(geos.box, mats.wheat, 0, 0.34, 0.08, 0.42, 0.12, 0.28),
       ]);
     case "candle":
       return assemble(kit, [

@@ -9,6 +9,8 @@ from .views import (
     PositionView,
     RegisterView,
     TakeView,
+    TreasureChestContentsView,
+    TreasureChestTakeView,
     UnequipView,
     WorldSceneryView,
     WorldView,
@@ -26,4 +28,10 @@ urlpatterns = [
     path("inventory/drop/", DropView.as_view(), name="drop"),
     path("world/take/", TakeView.as_view(), name="take"),
     path("world/chop/", ChopView.as_view(), name="chop"),
+    path(
+        "world/treasure-chest/<int:scenery_id>/",
+        TreasureChestContentsView.as_view(),
+        name="treasure-chest-contents",
+    ),
+    path("world/treasure-chest/take/", TreasureChestTakeView.as_view(), name="treasure-chest-take"),
 ]

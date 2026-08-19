@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dropItem, equipItem, fetchScenery, chopTree, unequipItem } from "../api/client";
+import { dropItem, equipItem, fetchScenery, chopTree, fetchTreasureChestContents, takeFromTreasureChest, unequipItem } from "../api/client";
 import ContextMenu from "../components/ContextMenu";
 import EquipmentPanel from "../components/EquipmentPanel";
 import InventoryPanel from "../components/InventoryPanel";
 import Landscape3D from "../components/Landscape3D";
 import RscActionBar from "../components/RscActionBar";
 import SkillsPanel from "../components/SkillsPanel";
+import TreasureChestPanel from "../components/TreasureChestPanel";
 import {
   applySceneryBlocking,
   buildNavGrid,
@@ -22,6 +23,14 @@ import { useAuth } from "../hooks/useAuth";
 
 const STEP_MS = 180;
 const IDLE_STATUS = "Click the ground to walk. Right-click for options.";
+const TREASURE_CHEST_KIND_ID = 900001;
+
+function isTreasureChest(placement) {
+  return Boolean(
+    placement?.object?.is_treasure_chest ||
+      placement?.kind?.rsc_id === TREASURE_CHEST_KIND_ID,
+  );
+}
 
 export default function GamePage() {
   const { player, setPlayer, logout } = useAuth();
@@ -33,6 +42,7 @@ export default function GamePage() {
   const [status, setStatus] = useState(IDLE_STATUS);
   const [tab, setTab] = useState(null);
   const [menu, setMenu] = useState(null);
+  const [chest, setChest] = useState(null);
   const pathRef = useRef([]);
   const walkingRef = useRef(false);
   const posRef = useRef(null);
@@ -132,6 +142,7 @@ export default function GamePage() {
   function onTileClick(tile) {
     closeMenu();
     setTab(null);
+    setChest(null);
     pendingActionRef.current = null;
     startWalk(tile);
   }
@@ -216,6 +227,56 @@ export default function GamePage() {
     walkToScenery(placement, () => tryChop(placement));
   }
 
+  const openTreasureChest = useCallback(
+    async (placement) => {
+      if (!placement?.object?.id) return;
+      try {
+        const data = await fetchTreasureChestContents(placement.object.id);
+        setChest({
+          sceneryId: placement.object.id,
+          name: data.name,
+          items: data.items,
+        });
+        setTab(null);
+        setStatus("You search the treasure chest.");
+      } catch (err) {
+        setStatus(err.message);
+      }
+    },
+    [],
+  );
+
+  function searchTreasureChest(placement) {
+    if (!placement?.tile || !posRef.current) return;
+    if (isAdjacentTile(posRef.current, placement.tile)) {
+      openTreasureChest(placement);
+      return;
+    }
+    walkToScenery(placement, () => openTreasureChest(placement));
+  }
+
+  async function onTakeFromChest(itemKey, itemName) {
+    if (!chest?.sceneryId || !land || !posRef.current) return;
+    const game = toGameCoords(land, posRef.current.x, posRef.current.z);
+    try {
+      const result = await takeFromTreasureChest(
+        chest.sceneryId,
+        itemKey,
+        game.x,
+        game.y,
+      );
+      setPlayer(result.player);
+      setStatus(result.message || `You take the ${itemName.toLowerCase()}.`);
+    } catch (err) {
+      setStatus(err.message);
+    }
+  }
+
+  function closeChest() {
+    setChest(null);
+    setStatus(IDLE_STATUS);
+  }
+
   function onSceneryClick(placement) {
     closeMenu();
     walkToScenery(placement);
@@ -297,6 +358,11 @@ export default function GamePage() {
         const command = actionId.slice(4);
         if (command === "Chop") {
           chopScenery(payload.placement);
+        } else if (
+          isTreasureChest(payload.placement) &&
+          (command === "Search" || command.toLowerCase() === "open")
+        ) {
+          searchTreasureChest(payload.placement);
         } else {
           setStatus("Nothing interesting happens.");
         }
@@ -405,6 +471,14 @@ export default function GamePage() {
           items={menu.items}
           onSelect={onMenuSelect}
           onClose={closeMenu}
+        />
+      )}
+
+      {chest && (
+        <TreasureChestPanel
+          chest={chest}
+          onTake={onTakeFromChest}
+          onClose={closeChest}
         />
       )}
     </main>
