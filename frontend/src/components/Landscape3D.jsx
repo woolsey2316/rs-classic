@@ -3,6 +3,13 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { fromGameCoords } from "../game/landscapeGrid";
 import {
+  buildFloorMeshes,
+  buildRoofMeshes,
+  buildWallMeshes,
+  collectTextureIds,
+  loadRscTextures,
+} from "../game/landscapeMeshes";
+import {
   PLAYER_SPRITE_ANGLES,
   PLAYER_SPRITE_SIZE,
   playerSpriteUrl,
@@ -90,6 +97,18 @@ function buildWalls(data) {
     new THREE.Float32BufferAttribute(positions, 3),
   );
   return geometry;
+}
+
+function addMeshes(scene, resources, meshes) {
+  for (const mesh of meshes) {
+    scene.add(mesh);
+    resources.push(mesh.geometry);
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach((material) => resources.push(material));
+    } else {
+      resources.push(mesh.material);
+    }
+  }
 }
 
 const PLAYER_HEIGHT = 1.35;
@@ -246,9 +265,13 @@ export default function Landscape3D({
 
     async function start() {
       try {
-        const response = await fetch(src);
-        if (!response.ok) throw new Error(`Landscape request failed (${response.status})`);
-        const data = await response.json();
+        const [landResponse, defsResponse] = await Promise.all([
+          fetch(src),
+          fetch("/landscape/defs.json"),
+        ]);
+        if (!landResponse.ok) throw new Error(`Landscape request failed (${landResponse.status})`);
+        const data = await landResponse.json();
+        const defs = defsResponse.ok ? await defsResponse.json() : null;
         if (disposed) return;
 
         const scene = new THREE.Scene();
@@ -290,17 +313,32 @@ export default function Landscape3D({
         scene.add(terrain);
         resources.push(terrainGeometry, terrainMaterial);
 
-        const wallGeometry = buildWalls(data);
-        const wallMaterial = new THREE.LineBasicMaterial({
-          color: 0x4d463f,
-          transparent: true,
-          opacity: 0.9,
-        });
-        scene.add(new THREE.LineSegments(wallGeometry, wallMaterial));
-        resources.push(wallGeometry, wallMaterial);
-
-        const playerTextures = await loadPlayerTextures();
+        const playerTexturesPromise = loadPlayerTextures();
+        const rscTexturesPromise = defs
+          ? loadRscTextures(collectTextureIds(data, defs))
+          : Promise.resolve(new Map());
+        const [playerTextures, rscTextures] = await Promise.all([
+          playerTexturesPromise,
+          rscTexturesPromise,
+        ]);
         if (disposed) return;
+
+        if (defs && rscTextures.size) {
+          addMeshes(scene, resources, buildWallMeshes(data, defs, rscTextures));
+          addMeshes(scene, resources, buildFloorMeshes(data, defs, rscTextures, heightAt));
+          addMeshes(scene, resources, buildRoofMeshes(data, defs, rscTextures, heightAt));
+          rscTextures.forEach((texture) => resources.push(texture));
+        } else {
+          const wallGeometry = buildWalls(data);
+          const wallMaterial = new THREE.LineBasicMaterial({
+            color: 0x4d463f,
+            transparent: true,
+            opacity: 0.9,
+          });
+          scene.add(new THREE.LineSegments(wallGeometry, wallMaterial));
+          resources.push(wallGeometry, wallMaterial);
+        }
+
         const player = makePlayerMarker(playerTextures);
         player.visible = false;
         player.userData.facing = { x: 0, z: 1 };

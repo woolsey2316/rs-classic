@@ -56,6 +56,7 @@ function export3dRegion({
     const colours = new Array(width * depth).fill(0);
     const blocked = new Array(width * depth).fill(1);
     const overlays = new Array(width * depth).fill(0);
+    const roofs = new Array(width * depth).fill(0);
     const walls = [];
 
     function paletteIndex(css) {
@@ -88,19 +89,27 @@ function export3dRegion({
                     heights[index] = tile.elevation;
                     colours[index] = paletteIndex(tileColour(tile));
                     overlays[index] = tile.overlay;
+                    roofs[index] = tile.wall.roof || 0;
                     blocked[index] = definition.blocked ? 1 : 0;
 
+                    // Wall IDs are 1-based indexes into config.wallObjects.
                     if (tile.wall.vertical) {
-                        walls.push([worldX + 1, worldZ, worldX + 1, worldZ + 1, tile.elevation]);
+                        walls.push([
+                            worldX + 1, worldZ, worldX + 1, worldZ + 1,
+                            tile.elevation, tile.wall.vertical
+                        ]);
                     }
                     if (tile.wall.horizontal) {
-                        walls.push([worldX, worldZ, worldX + 1, worldZ, tile.elevation]);
+                        walls.push([
+                            worldX, worldZ, worldX + 1, worldZ,
+                            tile.elevation, tile.wall.horizontal
+                        ]);
                     }
                     if (tile.wall.diagonal) {
                         const slash = tile.wall.diagonal.direction === '/';
                         walls.push(slash
-                            ? [worldX, worldZ + 1, worldX + 1, worldZ, tile.elevation]
-                            : [worldX, worldZ, worldX + 1, worldZ + 1, tile.elevation]);
+                            ? [worldX, worldZ + 1, worldX + 1, worldZ, tile.elevation, tile.wall.diagonal.overlay]
+                            : [worldX, worldZ, worldX + 1, worldZ + 1, tile.elevation, tile.wall.diagonal.overlay]);
                     }
                 }
             }
@@ -126,6 +135,7 @@ function export3dRegion({
         colours,
         blocked,
         overlays,
+        roofs,
         walls,
         spawn: {
             // Lumbridge castle courtyard, relative to this exported region.
