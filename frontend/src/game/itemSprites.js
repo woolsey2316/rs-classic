@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 
 export function spriteUrl(item) {
   if (!item?.sprite) return null;
-  return `/sprites/weapons/${item.sprite}.png`;
+  if (item.sprite.includes("/")) return item.sprite;
+  return `/sprites/rsc/items/${item.sprite}`;
 }
 
 export function useItemSprites(items) {

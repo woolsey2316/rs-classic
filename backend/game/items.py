@@ -1,6 +1,6 @@
 from .models import EquipmentSlot
 
-# Catalog of items. `sprite` matches a PNG in frontend/public/sprites/weapons/.
+# Catalog of items. `sprite` is a PNG in frontend/public/sprites/rsc/items/.
 ITEMS = [
     {
         "key": "bronze_helmet",
@@ -8,6 +8,7 @@ ITEMS = [
         "description": "A battered bronze helmet.",
         "equip_slot": EquipmentSlot.HELMET,
         "color": "#b87333",
+        "sprite": "104-medium_bronze_helmet.png",
     },
     {
         "key": "leather_gloves",
@@ -15,6 +16,7 @@ ITEMS = [
         "description": "Soft leather gloves.",
         "equip_slot": EquipmentSlot.GLOVES,
         "color": "#8b5a2b",
+        "sprite": "16-leather_gloves.png",
     },
     {
         "key": "leather_boots",
@@ -22,6 +24,7 @@ ITEMS = [
         "description": "Comfortable walking boots.",
         "equip_slot": EquipmentSlot.BOOTS,
         "color": "#6b4423",
+        "sprite": "17-boots.png",
     },
     {
         "key": "leather_body",
@@ -29,6 +32,7 @@ ITEMS = [
         "description": "A light leather cuirass.",
         "equip_slot": EquipmentSlot.BODY,
         "color": "#a0673b",
+        "sprite": "15-leather_armour.png",
     },
     {
         "key": "leather_chaps",
@@ -36,6 +40,7 @@ ITEMS = [
         "description": "Leather leg armour.",
         "equip_slot": EquipmentSlot.LEGS,
         "color": "#8a5530",
+        "sprite": "761-protective_trousers.png",
     },
     {
         "key": "gold_ring",
@@ -43,6 +48,7 @@ ITEMS = [
         "description": "A plain gold ring.",
         "equip_slot": EquipmentSlot.RING,
         "color": "#ffd700",
+        "sprite": "283-gold_ring.png",
     },
     {
         "key": "coins",
@@ -51,6 +57,7 @@ ITEMS = [
         "equip_slot": None,
         "stackable": True,
         "color": "#e6c35c",
+        "sprite": "10-coins.png",
     },
     {
         "key": "bronze_dagger",
@@ -58,7 +65,7 @@ ITEMS = [
         "description": "A small bronze dagger.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#c08a4a",
-        "sprite": "dagger_A",
+        "sprite": "62-bronze_dagger.png",
     },
     {
         "key": "iron_dagger",
@@ -66,7 +73,7 @@ ITEMS = [
         "description": "A short iron dagger.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#9aa3ad",
-        "sprite": "dagger_B",
+        "sprite": "28-iron_dagger.png",
     },
     {
         "key": "bronze_sword",
@@ -74,7 +81,7 @@ ITEMS = [
         "description": "A short bronze sword.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#c08a4a",
-        "sprite": "sword_A",
+        "sprite": "66-bronze_short_sword.png",
     },
     {
         "key": "iron_sword",
@@ -82,7 +89,7 @@ ITEMS = [
         "description": "A serviceable iron sword.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#9aa3ad",
-        "sprite": "sword_B",
+        "sprite": "1-iron_short_sword.png",
     },
     {
         "key": "steel_sword",
@@ -90,7 +97,7 @@ ITEMS = [
         "description": "A well-forged steel sword.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#cfd6de",
-        "sprite": "sword_C",
+        "sprite": "67-steel_short_sword.png",
     },
     {
         "key": "longsword",
@@ -98,7 +105,7 @@ ITEMS = [
         "description": "A long steel blade.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#d8d3cc",
-        "sprite": "sword_D",
+        "sprite": "72-steel_long_sword.png",
     },
     {
         "key": "scimitar",
@@ -106,7 +113,7 @@ ITEMS = [
         "description": "A curved slashing sword.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#e6c35c",
-        "sprite": "sword_E",
+        "sprite": "84-steel_scimitar.png",
     },
     {
         "key": "bronze_axe",
@@ -114,7 +121,7 @@ ITEMS = [
         "description": "A double-headed bronze axe.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#b87333",
-        "sprite": "axe_A",
+        "sprite": "87-bronze_axe.png",
     },
     {
         "key": "iron_battleaxe",
@@ -122,7 +129,7 @@ ITEMS = [
         "description": "A heavy iron battleaxe.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#6b7280",
-        "sprite": "axe_B",
+        "sprite": "89-iron_battle_axe.png",
     },
     {
         "key": "steel_battleaxe",
@@ -130,7 +137,7 @@ ITEMS = [
         "description": "A vicious steel battleaxe.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#94a3b8",
-        "sprite": "axe_C",
+        "sprite": "90-steel_battle_axe.png",
     },
     {
         "key": "bronze_mace",
@@ -138,7 +145,7 @@ ITEMS = [
         "description": "A bronze-headed mace.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#cd7f32",
-        "sprite": "hammer_A",
+        "sprite": "94-bronze_mace.png",
     },
     {
         "key": "iron_mace",
@@ -146,7 +153,7 @@ ITEMS = [
         "description": "An iron mace, good for crushing.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#6e6a63",
-        "sprite": "hammer_B",
+        "sprite": "0-iron_mace.png",
     },
     {
         "key": "warhammer",
@@ -154,7 +161,7 @@ ITEMS = [
         "description": "A hefty warhammer.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#8a7a55",
-        "sprite": "hammer_C",
+        "sprite": "168-hammer.png",
     },
     {
         "key": "shortbow",
@@ -162,7 +169,7 @@ ITEMS = [
         "description": "A simple wooden shortbow.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#d7b07a",
-        "sprite": "bow_A_withString",
+        "sprite": "189-shortbow.png",
     },
     {
         "key": "longbow",
@@ -170,7 +177,7 @@ ITEMS = [
         "description": "A tall wooden longbow.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#8c6b3d",
-        "sprite": "bow_B_withString",
+        "sprite": "188-longbow.png",
     },
     {
         "key": "bronze_arrows",
@@ -179,7 +186,7 @@ ITEMS = [
         "equip_slot": EquipmentSlot.ARROWS,
         "stackable": True,
         "color": "#cd7f32",
-        "sprite": "arrow_A",
+        "sprite": "11-bronze_arrows.png",
     },
     {
         "key": "iron_arrows",
@@ -188,7 +195,7 @@ ITEMS = [
         "equip_slot": EquipmentSlot.ARROWS,
         "stackable": True,
         "color": "#9aa3ad",
-        "sprite": "arrow_B",
+        "sprite": "638-iron_arrows.png",
     },
     {
         "key": "bronze_spear",
@@ -196,7 +203,7 @@ ITEMS = [
         "description": "A bronze-tipped spear.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#c08a4a",
-        "sprite": "spear_A",
+        "sprite": "827-bronze_spear.png",
     },
     {
         "key": "halberd",
@@ -204,7 +211,7 @@ ITEMS = [
         "description": "A long polearm with an axe head.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#6b7280",
-        "sprite": "halberd",
+        "sprite": "78-steel_2-handed_sword.png",
     },
     {
         "key": "wooden_shield",
@@ -212,7 +219,7 @@ ITEMS = [
         "description": "A wooden heater shield with iron studs.",
         "equip_slot": EquipmentSlot.SHIELD,
         "color": "#6b4423",
-        "sprite": "shield_A",
+        "sprite": "4-wooden_shield.png",
     },
     {
         "key": "iron_square_shield",
@@ -220,7 +227,7 @@ ITEMS = [
         "description": "A sturdy iron square shield.",
         "equip_slot": EquipmentSlot.SHIELD,
         "color": "#7b8794",
-        "sprite": "shield_B",
+        "sprite": "3-iron_square_shield.png",
     },
     {
         "key": "kite_shield",
@@ -228,7 +235,7 @@ ITEMS = [
         "description": "A tall kite shield.",
         "equip_slot": EquipmentSlot.SHIELD,
         "color": "#4b5563",
-        "sprite": "shield_C",
+        "sprite": "2-iron_kite_shield.png",
     },
     {
         "key": "staff",
@@ -236,7 +243,7 @@ ITEMS = [
         "description": "A plain wooden staff.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#8c6b3d",
-        "sprite": "staff_A",
+        "sprite": "100-staff.png",
     },
     {
         "key": "magic_staff",
@@ -244,7 +251,7 @@ ITEMS = [
         "description": "A staff crowned with a dull crystal.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#c084fc",
-        "sprite": "staff_B",
+        "sprite": "198-magic_staff.png",
     },
     {
         "key": "wand",
@@ -252,7 +259,7 @@ ITEMS = [
         "description": "A short magical wand.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#d4a84b",
-        "sprite": "wand_A",
+        "sprite": "614-battlestaff.png",
     },
     {
         "key": "bronze_claws",
@@ -260,7 +267,7 @@ ITEMS = [
         "description": "A pair of bronze claw weapons.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#b87333",
-        "sprite": "fistweapon_A",
+        "sprite": "1076-bronze_throwing_knife.png",
     },
     {
         "key": "steel_claws",
@@ -268,7 +275,7 @@ ITEMS = [
         "description": "A pair of steel claw weapons.",
         "equip_slot": EquipmentSlot.WEAPON,
         "color": "#9aa3ad",
-        "sprite": "fistweapon_B",
+        "sprite": "1077-steel_throwing_knife.png",
     },
 ]
 
