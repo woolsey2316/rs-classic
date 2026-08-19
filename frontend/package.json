@@ -7,10 +7,13 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "generate-player-sprites": "node scripts/generate-player-sprites.cjs"
+    "generate-player-sprites": "node scripts/generate-player-sprites.cjs",
+    "dump-rsc-sprites": "node scripts/dump-rsc-sprites.mjs"
   },
   "dependencies": {
+    "@2003scape/rsc-config": "^2.0.0",
     "@2003scape/rsc-landscape": "^2.0.1",
+    "@2003scape/rsc-sprites": "github:2003scape/rsc-sprites",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.2.0",
