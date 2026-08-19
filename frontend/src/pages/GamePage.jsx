@@ -4,6 +4,7 @@ import ContextMenu from "../components/ContextMenu";
 import EquipmentPanel from "../components/EquipmentPanel";
 import InventoryPanel from "../components/InventoryPanel";
 import Landscape3D from "../components/Landscape3D";
+import RscActionBar from "../components/RscActionBar";
 import SkillsPanel from "../components/SkillsPanel";
 import {
   applySceneryBlocking,
@@ -29,7 +30,7 @@ export default function GamePage() {
   const [facing, setFacing] = useState({ x: 0, z: 1 });
   const [destination, setDestination] = useState(null);
   const [status, setStatus] = useState(IDLE_STATUS);
-  const [tab, setTab] = useState("skills");
+  const [tab, setTab] = useState(null);
   const [menu, setMenu] = useState(null);
   const pathRef = useRef([]);
   const walkingRef = useRef(false);
@@ -122,6 +123,7 @@ export default function GamePage() {
 
   function onTileClick(tile) {
     closeMenu();
+    setTab(null);
     startWalk(tile);
   }
 
@@ -318,23 +320,8 @@ export default function GamePage() {
         </button>
       </div>
 
-      <aside className="side-panels">
-        <div className="panel-tabs">
-          {[
-            ["skills", "Skills"],
-            ["inventory", "Inventory"],
-            ["equipment", "Equipment"],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              className={tab === id ? "active" : ""}
-              onClick={() => setTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      <aside className="rsc-sidebar">
+        <RscActionBar tab={tab} onTabChange={setTab} />
 
         {tab === "skills" && (
           <SkillsPanel skills={player.skills} totalLevel={player.total_level} />

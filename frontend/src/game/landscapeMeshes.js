@@ -130,24 +130,25 @@ export function buildWallMeshes(data, defs, textures) {
   return meshesFromGroups(groups);
 }
 
-export function buildFloorMeshes(data, defs, textures, heightAt) {
+export function buildFloorMeshes(data, defs, textures) {
   const groups = new Map();
   const { width, depth } = data;
   for (let z = 0; z < depth; z += 1) {
     for (let x = 0; x < width; x += 1) {
-      const overlay = data.overlays[z * width + x];
+      const tileIndex = z * width + x;
+      const overlay = data.overlays[tileIndex];
       const kind = defs?.tileKinds?.[overlay];
-      if (!kind || kind.texture == null) continue;
+      if (!kind || kind.type !== "floor" || kind.texture == null) continue;
       const texture = textures.get(kind.texture);
       if (!texture) continue;
       const bucket = groupBucket(groups, `floor:${kind.texture}`, { texture, colour: 0xffffff });
-      const lift = 0.03;
+      const y = data.heights[tileIndex] * data.heightScale + 0.03;
       pushQuad(
         bucket,
-        [x, heightAt(data, x, z) + lift, z],
-        [x + 1, heightAt(data, x + 1, z) + lift, z],
-        [x, heightAt(data, x, z + 1) + lift, z + 1],
-        [x + 1, heightAt(data, x + 1, z + 1) + lift, z + 1],
+        [x, y, z],
+        [x + 1, y, z],
+        [x, y, z + 1],
+        [x + 1, y, z + 1],
         1,
         1,
       );

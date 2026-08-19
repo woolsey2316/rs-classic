@@ -393,17 +393,81 @@ input {
   font-size: 0.9rem;
 }
 
-.side-panels {
+.side-panels,
+.rsc-sidebar {
   position: absolute;
   top: 0;
   right: 0;
+  z-index: 3;
   display: flex;
-  height: 250px;
-  width: 350px;
-  overflow: scroll;
+  width: 248px;
+  max-height: 100vh;
   flex-direction: column;
-  gap: 0.75rem;
-  min-height: 0;
+  pointer-events: none;
+}
+
+.side-panels > *,
+.rsc-sidebar > * {
+  pointer-events: auto;
+}
+
+.rsc-action-bar {
+  position: relative;
+  align-self: flex-end;
+  flex-shrink: 0;
+  margin: 3px 3px 0 0;
+}
+
+.rsc-action-bar-base,
+.rsc-action-bar-hover {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  pointer-events: none;
+  user-select: none;
+}
+
+.rsc-action-bar-hit {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.rsc-action-bar-tab {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.rsc-sidebar .panel {
+  margin: 0 3px 3px;
+  max-height: calc(100vh - 40px);
+  border: 1px solid #000;
+  background: rgb(181, 181, 181);
+  box-shadow: none;
+  padding: 0.35rem;
+}
+
+.rsc-sidebar .panel-header {
+  margin-bottom: 0.35rem;
+}
+
+.rsc-sidebar .panel-header h2 {
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: #000;
+}
+
+.rsc-sidebar .hint,
+.rsc-sidebar .total-level {
+  color: #222;
 }
 
 .panel-tabs {
@@ -485,6 +549,40 @@ input {
   height: 100%;
   background: linear-gradient(90deg, #6b8f3a, #d4a84b);
   transition: width 0.25s ease;
+}
+
+.rsc-sidebar .inventory-grid {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+}
+
+.rsc-sidebar .inv-slot {
+  aspect-ratio: 49 / 34;
+  border: 1px solid #000;
+  background: rgb(181, 181, 181);
+  border-radius: 0;
+  padding: 0.15rem;
+}
+
+.rsc-sidebar .inv-slot.filled.equippable:hover {
+  background: rgb(200, 200, 200);
+  border-color: #000;
+}
+
+.rsc-sidebar .skill-row {
+  background: rgb(201, 201, 201);
+  border-color: #000;
+}
+
+.rsc-sidebar .skill-bar {
+  background: #1a140e;
+  border-color: #000;
+}
+
+.rsc-sidebar .equip-slot {
+  border-color: #000;
+  background: rgb(201, 201, 201);
+  border-radius: 0;
 }
 
 .inventory-grid {

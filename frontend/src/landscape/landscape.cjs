@@ -32,9 +32,12 @@ function parseColour(value) {
 
 function tileColour(tile) {
     const definition = tile.getTileDef();
-    return tile.overlay && definition.colour
-        ? definition.colour
-        : tile.getTerrainColour();
+    // Indoor floor overlays are drawn as separate flat meshes; keep grass/terrain
+    // visible on the base terrain underneath.
+    if (tile.overlay && definition.colour && !definition.indoors) {
+        return definition.colour;
+    }
+    return tile.getTerrainColour();
 }
 
 // Export a 3x3-sector, 144x144-tile region around Lumbridge. Keeping the

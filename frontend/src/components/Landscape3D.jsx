@@ -16,6 +16,10 @@ import {
   spriteViewFromCamera,
 } from "../game/playerSprite";
 import { createSceneryKit, makeSceneryMesh } from "../game/sceneryMeshes";
+import {
+  clickIconFrame,
+  clickIconUrl,
+} from "../game/clickIndicator";
 
 function colourAt(data, index) {
   const [r, g, b] = data.palette[data.colours[index]] || [60, 90, 45];
@@ -219,6 +223,66 @@ function makeTileMarker(colour) {
   return marker;
 }
 
+function loadClickIconTextures() {
+  const loader = new THREE.TextureLoader();
+  return Promise.all(
+    [0, 1, 2, 3].map(
+      (frame) =>
+        new Promise((resolve, reject) => {
+          loader.load(
+            clickIconUrl(frame),
+            (texture) => {
+              texture.magFilter = THREE.NearestFilter;
+              texture.minFilter = THREE.NearestFilter;
+              texture.colorSpace = THREE.SRGBColorSpace;
+              resolve(texture);
+            },
+            undefined,
+            () => reject(new Error(`Failed to load ${clickIconUrl(frame)}`)),
+          );
+        }),
+    ),
+  );
+}
+
+function makeClickIndicator(textures) {
+  const materials = textures.map(
+    (texture) =>
+      new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      }),
+  );
+  const sprite = new THREE.Sprite(materials[0]);
+  sprite.center.set(0.5, 0.5);
+  sprite.scale.set(0.3, 0.3, 1);
+  sprite.renderOrder = 4;
+  sprite.visible = false;
+  return { sprite, materials };
+}
+
+function updateClickIndicator(indicator, data, animation, now) {
+  if (!indicator || !animation) {
+    if (indicator) indicator.sprite.visible = false;
+    return false;
+  }
+  const frame = clickIconFrame(now - animation.startedAt);
+  if (frame < 0) {
+    indicator.sprite.visible = false;
+    return false;
+  }
+  indicator.sprite.visible = true;
+  indicator.sprite.material = indicator.materials[frame];
+  indicator.sprite.position.set(
+    animation.x + 0.5,
+    heightAt(data, animation.x, animation.z) + 0.14,
+    animation.z + 0.5,
+  );
+  return true;
+}
+
 /**
  * Renders the exported RSC region. Pointer events are resolved by raycasting
  * scenery first, then the terrain mesh. Tile callbacks receive landscape
@@ -314,18 +378,20 @@ export default function Landscape3D({
         resources.push(terrainGeometry, terrainMaterial);
 
         const playerTexturesPromise = loadPlayerTextures();
+        const clickIconTexturesPromise = loadClickIconTextures();
         const rscTexturesPromise = defs
           ? loadRscTextures(collectTextureIds(data, defs))
           : Promise.resolve(new Map());
-        const [playerTextures, rscTextures] = await Promise.all([
+        const [playerTextures, clickIconTextures, rscTextures] = await Promise.all([
           playerTexturesPromise,
+          clickIconTexturesPromise,
           rscTexturesPromise,
         ]);
         if (disposed) return;
 
         if (defs && rscTextures.size) {
           addMeshes(scene, resources, buildWallMeshes(data, defs, rscTextures));
-          addMeshes(scene, resources, buildFloorMeshes(data, defs, rscTextures, heightAt));
+          addMeshes(scene, resources, buildFloorMeshes(data, defs, rscTextures));
           addMeshes(scene, resources, buildRoofMeshes(data, defs, rscTextures, heightAt));
           rscTextures.forEach((texture) => resources.push(texture));
         } else {
@@ -355,7 +421,10 @@ export default function Landscape3D({
 
         const destinationMarker = makeTileMarker(0xffffff);
         const selectionMarker = makeTileMarker(0x8ce27a);
-        scene.add(destinationMarker, selectionMarker);
+        const clickIndicator = makeClickIndicator(clickIconTextures);
+        scene.add(destinationMarker, selectionMarker, clickIndicator.sprite);
+        clickIconTextures.forEach((texture) => resources.push(texture));
+        clickIndicator.materials.forEach((material) => resources.push(material));
 
         const hemisphere = new THREE.HemisphereLight(0xe6f4ff, 0x44552e, 2.2);
         scene.add(hemisphere);
@@ -425,6 +494,13 @@ export default function Landscape3D({
             handlersRef.current.onSceneryClick?.(hit.placement);
             return;
           }
+          if (viewRef.current) {
+            viewRef.current.clickAnim = {
+              startedAt: performance.now(),
+              x: hit.tile.x,
+              z: hit.tile.z,
+            };
+          }
           handlersRef.current.onTileClick?.(hit.tile);
         };
 
@@ -476,6 +552,8 @@ export default function Landscape3D({
           camera,
           destinationMarker,
           selectionMarker,
+          clickIndicator,
+          clickAnim: null,
           controls,
           sceneryGroup,
           sceneryKit,
@@ -489,6 +567,18 @@ export default function Landscape3D({
           if (disposed) return;
           controls.update();
           if (player.visible) updatePlayerSprite(player, camera);
+          const view = viewRef.current;
+          if (view?.clickIndicator) {
+            const active = updateClickIndicator(
+              view.clickIndicator,
+              data,
+              view.clickAnim,
+              performance.now(),
+            );
+            if (!active && view.clickAnim) {
+              view.clickAnim = null;
+            }
+          }
           renderer.render(scene, camera);
           frame = requestAnimationFrame(render);
         };
