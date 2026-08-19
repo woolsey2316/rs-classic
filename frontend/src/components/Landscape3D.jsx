@@ -588,7 +588,7 @@ export default function Landscape3D({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const { data, player, selectionMarker } = view;
+    const { data, player, destinationMarker, selectionMarker } = view;
 
     if (playerPos) {
       player.visible = true;
@@ -598,11 +598,12 @@ export default function Landscape3D({
         heightAt(data, playerPos.x, playerPos.z),
         playerPos.z + 0.5,
       );
+      followPlayerWithCamera(view, playerPos);
     } else {
       player.visible = false;
     }
 
-  }, [playerPos, playerFacing, ready]);
+  }, [playerPos, playerFacing, destination, selectedTile, ready]);
 
   useEffect(() => {
     const view = viewRef.current;
