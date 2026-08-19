@@ -86,9 +86,12 @@ export async function dropItem(slotIndex) {
   });
 }
 
-export async function takeItem(groundItemId) {
-  return api("/api/world/take/", {
-    method: "POST",
-    body: { ground_item_id: groundItemId },
+export async function fetchScenery({ minX, maxX, minY, maxY }) {
+  const params = new URLSearchParams({
+    min_x: String(minX),
+    max_x: String(maxX),
+    min_y: String(minY),
+    max_y: String(maxY),
   });
+  return api(`/api/world/scenery/?${params}`);
 }

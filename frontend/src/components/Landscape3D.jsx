@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { fromGameCoords } from "../game/landscapeGrid";
 import {
   PLAYER_SPRITE_ANGLES,
   PLAYER_SPRITE_SIZE,
   playerSpriteUrl,
   spriteViewFromCamera,
 } from "../game/playerSprite";
+import { createSceneryKit, makeSceneryMesh } from "../game/sceneryMeshes";
 
 function colourAt(data, index) {
   const [r, g, b] = data.palette[data.colours[index]] || [60, 90, 45];
@@ -200,9 +202,9 @@ function makeTileMarker(colour) {
 
 /**
  * Renders the exported RSC region. Pointer events are resolved by raycasting
- * against the terrain mesh, so callbacks receive landscape tile coordinates
- * (`{x, z}`) rather than screen coordinates; `screen` is passed separately
- * purely so callers can position a menu at the cursor.
+ * scenery first, then the terrain mesh. Tile callbacks receive landscape
+ * coordinates (`{x, z}`); scenery callbacks receive the placement, kind, and
+ * tile. `screen` is passed so callers can position a menu at the cursor.
  */
 export default function Landscape3D({
   src = "/landscape/lumbridge-3d.json",
@@ -210,9 +212,12 @@ export default function Landscape3D({
   playerFacing = { x: 0, z: 1 },
   destination = null,
   selectedTile = null,
+  scenery = null,
   onLoad,
   onTileClick,
   onTileContextMenu,
+  onSceneryClick,
+  onSceneryContextMenu,
 }) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
@@ -220,7 +225,13 @@ export default function Landscape3D({
   const [message, setMessage] = useState("Loading RSC landscape…");
   const [ready, setReady] = useState(0);
 
-  handlersRef.current = { onLoad, onTileClick, onTileContextMenu };
+  handlersRef.current = {
+    onLoad,
+    onTileClick,
+    onTileContextMenu,
+    onSceneryClick,
+    onSceneryContextMenu,
+  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -298,6 +309,12 @@ export default function Landscape3D({
         player.userData.extraTextures.forEach((texture) => resources.push(texture));
         Object.values(player.userData.materials).forEach((material) => resources.push(material));
 
+        const sceneryGroup = new THREE.Group();
+        sceneryGroup.name = "scenery";
+        scene.add(sceneryGroup);
+        const sceneryKit = createSceneryKit();
+        resources.push({ dispose: () => sceneryKit.dispose() });
+
         const destinationMarker = makeTileMarker(0xffffff);
         const selectionMarker = makeTileMarker(0x8ce27a);
         scene.add(destinationMarker, selectionMarker);
@@ -318,17 +335,34 @@ export default function Landscape3D({
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
 
-        function pickTile(event) {
+        function pickHit(event) {
           const rect = renderer.domElement.getBoundingClientRect();
           if (!rect.width || !rect.height) return null;
           pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
           pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
           raycaster.setFromCamera(pointer, camera);
+          const screen = { x: event.clientX, y: event.clientY };
+
+          const sceneryHit = raycaster.intersectObject(sceneryGroup, true)[0];
+          if (sceneryHit) {
+            let node = sceneryHit.object;
+            while (node && node !== sceneryGroup && !node.userData?.placement) {
+              node = node.parent;
+            }
+            if (node?.userData?.placement) {
+              return { type: "scenery", placement: node.userData.placement, screen };
+            }
+          }
+
           const hit = raycaster.intersectObject(terrain, false)[0];
           if (!hit) return null;
           return {
-            x: Math.max(0, Math.min(data.width - 1, Math.floor(hit.point.x))),
-            z: Math.max(0, Math.min(data.depth - 1, Math.floor(hit.point.z))),
+            type: "tile",
+            tile: {
+              x: Math.max(0, Math.min(data.width - 1, Math.floor(hit.point.x))),
+              z: Math.max(0, Math.min(data.depth - 1, Math.floor(hit.point.z))),
+            },
+            screen,
           };
         }
 
@@ -347,18 +381,33 @@ export default function Landscape3D({
             Math.abs(event.clientY - pressedAt.y) > 4;
           pressedAt = null;
           if (dragged) return;
-          const tile = pickTile(event);
-          if (tile) handlersRef.current.onTileClick?.(tile);
+          const hit = pickHit(event);
+          if (!hit) return;
+          if (hit.type === "scenery") {
+            handlersRef.current.onSceneryClick?.(hit.placement);
+            return;
+          }
+          handlersRef.current.onTileClick?.(hit.tile);
         };
 
         const onContextMenu = (event) => {
           event.preventDefault();
-          const tile = pickTile(event);
-          handlersRef.current.onTileContextMenu?.(
-            tile
-              ? { tile, screen: { x: event.clientX, y: event.clientY } }
-              : null,
-          );
+          const hit = pickHit(event);
+          if (!hit) {
+            handlersRef.current.onTileContextMenu?.(null);
+            return;
+          }
+          if (hit.type === "scenery") {
+            handlersRef.current.onSceneryContextMenu?.({
+              placement: hit.placement,
+              screen: hit.screen,
+            });
+            return;
+          }
+          handlersRef.current.onTileContextMenu?.({
+            tile: hit.tile,
+            screen: hit.screen,
+          });
         };
 
         const canvas = renderer.domElement;
@@ -390,6 +439,8 @@ export default function Landscape3D({
           destinationMarker,
           selectionMarker,
           controls,
+          sceneryGroup,
+          sceneryKit,
         };
 
         setMessage("");
@@ -462,6 +513,31 @@ export default function Landscape3D({
       selectionMarker.visible = false;
     }
   }, [playerPos, playerFacing, destination, selectedTile, ready]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view?.sceneryGroup || !view.sceneryKit) return;
+    const { data, sceneryGroup, sceneryKit } = view;
+    sceneryGroup.clear();
+    if (!scenery?.objects?.length) return;
+
+    const kinds = new Map((scenery.kinds || []).map((kind) => [kind.rsc_id, kind]));
+    for (const object of scenery.objects) {
+      const kind = kinds.get(object.kind);
+      if (!kind) continue;
+      const tile = fromGameCoords(data, object.x, object.y);
+      if (!tile) continue;
+      const mesh = makeSceneryMesh(sceneryKit, kind, object);
+      mesh.position.set(
+        tile.x + 0.5,
+        heightAt(data, tile.x, tile.z),
+        tile.z + 0.5,
+      );
+      mesh.rotation.y = (object.direction || 0) * (Math.PI / 4);
+      mesh.userData.placement = { object, kind, tile };
+      sceneryGroup.add(mesh);
+    }
+  }, [scenery, ready]);
 
   return (
     <div className="landscape-3d">

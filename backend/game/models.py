@@ -202,3 +202,41 @@ class GroundItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.item} x{self.quantity} @ ({self.x}, {self.y})"
+
+
+class SceneryKind(models.Model):
+    """RSC scenery definition (tree, table, ladder, …) keyed by object id."""
+
+    rsc_id = models.PositiveIntegerField(unique=True)
+    name = models.CharField(max_length=64)
+    description = models.TextField(blank=True, default="")
+    commands = models.JSONField(default=list, blank=True)
+    model_name = models.CharField(max_length=64, blank=True, default="")
+    width = models.PositiveSmallIntegerField(default=1)
+    height = models.PositiveSmallIntegerField(default=1)
+    block_type = models.CharField(max_length=16, default="unblocked")
+    item_height = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["rsc_id"]
+
+    def __str__(self) -> str:
+        return f"{self.rsc_id} {self.name}"
+
+
+class Scenery(models.Model):
+    """A placed scenery object in RSC world coordinates."""
+
+    kind = models.ForeignKey(SceneryKind, on_delete=models.CASCADE, related_name="placements")
+    x = models.PositiveIntegerField()
+    y = models.PositiveIntegerField()
+    direction = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["x", "y"]),
+        ]
+        ordering = ["y", "x", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.kind} @ ({self.x}, {self.y})"

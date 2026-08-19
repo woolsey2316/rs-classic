@@ -164,14 +164,91 @@ export function tileInfo(data, x, z) {
 export function toGameCoords(data, x, z) {
   const bounds = data?.sectorBounds;
   if (!bounds) return { x, y: z };
-  // Sector columns run east→west, so undo that flip before rebuilding the
-  // game's x coordinate from the sector and the tile within it.
+  // Sector columns run east→west, and each sector's tile array is reversed on
+  // the x axis when parsed, so undo both before rebuilding game coordinates.
   const column = Math.floor(x / 48);
   const sectorX = bounds.maxX - column;
+  const exportX = x - column * 48;
   return {
-    x: (x - column * 48) + (sectorX - 48) * 48,
+    x: (47 - exportX) + (sectorX - 48) * 48,
     y: z + (bounds.minY - 36) * 48 - 48 + (bounds.plane || 0) * 944,
   };
+}
+
+/** Map RSC world coordinates onto the loaded region, or null if off-map. */
+export function fromGameCoords(data, gameX, gameY) {
+  const bounds = data?.sectorBounds;
+  if (!bounds) return null;
+  const sectorX = Math.floor(gameX / 48) + 48;
+  const tileX = ((gameX % 48) + 48) % 48;
+  const localX = (bounds.maxX - sectorX) * 48 + (47 - tileX);
+
+  const yOnPlane = gameY - (bounds.plane || 0) * 944;
+  const sectorY = Math.floor(yOnPlane / 48) + 37;
+  const tileZ = ((yOnPlane % 48) + 48) % 48;
+  const localZ = (sectorY - bounds.minY) * 48 + tileZ;
+
+  if (
+    localX < 0 ||
+    localZ < 0 ||
+    localX >= data.width ||
+    localZ >= data.depth
+  ) {
+    return null;
+  }
+  return { x: localX, z: localZ };
+}
+
+/** Inclusive RSC world-coordinate bbox covered by the loaded region. */
+export function regionGameBounds(data) {
+  const bounds = data?.sectorBounds;
+  if (!bounds) {
+    return { minX: 0, maxX: (data?.width || 1) - 1, minY: 0, maxY: (data?.depth || 1) - 1 };
+  }
+  const minX = (bounds.minX - 48) * 48;
+  const maxX = (bounds.maxX - 48) * 48 + 47;
+  const minY = (bounds.minY - 36) * 48 - 48 + (bounds.plane || 0) * 944;
+  const maxY = minY + (data.depth || 1) - 1;
+  return { minX, maxX, minY, maxY };
+}
+
+export function sceneryOccupies(kind, direction) {
+  let width = Math.max(1, kind?.width || 1);
+  let height = Math.max(1, kind?.height || 1);
+  if ((direction || 0) % 2 === 1) {
+    [width, height] = [height, width];
+  }
+  return { width, height };
+}
+
+export function sceneryBlocksTile(kind) {
+  return kind?.type === "blocked" || kind?.type === "closed-door";
+}
+
+/** Copy a nav grid and mark tiles occupied by blocking scenery. */
+export function applySceneryBlocking(nav, land, scenery) {
+  if (!nav || !land || !scenery?.objects?.length) return nav;
+  const blockedTiles = nav.blockedTiles.slice();
+  const next = { ...nav, blockedTiles };
+  const kinds = new Map((scenery.kinds || []).map((kind) => [kind.rsc_id, kind]));
+
+  for (const object of scenery.objects) {
+    const kind = kinds.get(object.kind);
+    if (!sceneryBlocksTile(kind)) continue;
+    const origin = fromGameCoords(land, object.x, object.y);
+    if (!origin) continue;
+    const { width, height } = sceneryOccupies(kind, object.direction);
+    for (let dx = 0; dx < width; dx += 1) {
+      for (let dz = 0; dz < height; dz += 1) {
+        const x = origin.x + dx;
+        const z = origin.z + dz;
+        if (x >= 0 && z >= 0 && x < nav.width && z < nav.depth) {
+          blockedTiles[z * nav.width + x] = 1;
+        }
+      }
+    }
+  }
+  return next;
 }
 
 /** Nearest walkable tile to `origin`, searched in rings (used for spawning). */

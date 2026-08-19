@@ -10,6 +10,7 @@ from .models import (
     Item,
     Player,
     PlayerSkill,
+    SceneryKind,
 )
 from .xp import XP_TABLE, xp_to_next_level
 
@@ -135,6 +136,25 @@ class GroundItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = GroundItem
         fields = ("id", "x", "y", "quantity", "item")
+
+
+class SceneryKindSerializer(serializers.ModelSerializer):
+    model = serializers.CharField(source="model_name")
+    type = serializers.CharField(source="block_type")
+
+    class Meta:
+        model = SceneryKind
+        fields = (
+            "rsc_id",
+            "name",
+            "description",
+            "commands",
+            "model",
+            "width",
+            "height",
+            "type",
+            "item_height",
+        )
 
 
 class TakeSerializer(serializers.Serializer):

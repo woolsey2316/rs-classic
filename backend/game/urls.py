@@ -9,6 +9,7 @@ from .views import (
     RegisterView,
     TakeView,
     UnequipView,
+    WorldSceneryView,
     WorldView,
 )
 
@@ -18,6 +19,7 @@ urlpatterns = [
     path("player/", PlayerStateView.as_view(), name="player"),
     path("player/position/", PositionView.as_view(), name="player-position"),
     path("world/", WorldView.as_view(), name="world"),
+    path("world/scenery/", WorldSceneryView.as_view(), name="world-scenery"),
     path("inventory/equip/", EquipView.as_view(), name="equip"),
     path("inventory/unequip/", UnequipView.as_view(), name="unequip"),
     path("inventory/drop/", DropView.as_view(), name="drop"),

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dropItem, equipItem, unequipItem } from "../api/client";
+import { dropItem, equipItem, fetchScenery, unequipItem } from "../api/client";
 import ContextMenu from "../components/ContextMenu";
 import EquipmentPanel from "../components/EquipmentPanel";
 import InventoryPanel from "../components/InventoryPanel";
 import Landscape3D from "../components/Landscape3D";
 import SkillsPanel from "../components/SkillsPanel";
 import {
+  applySceneryBlocking,
   buildNavGrid,
   findLandscapePath,
   isWalkable,
   nearestWalkable,
+  regionGameBounds,
   tileInfo,
   toGameCoords,
 } from "../game/landscapeGrid";
@@ -22,6 +24,7 @@ const IDLE_STATUS = "Click the ground to walk. Right-click for options.";
 export default function GamePage() {
   const { player, setPlayer, logout } = useAuth();
   const [land, setLand] = useState(null);
+  const [scenery, setScenery] = useState(null);
   const [pos, setPos] = useState(null);
   const [facing, setFacing] = useState({ x: 0, z: 1 });
   const [destination, setDestination] = useState(null);
@@ -32,7 +35,11 @@ export default function GamePage() {
   const walkingRef = useRef(false);
   const posRef = useRef(null);
 
-  const nav = useMemo(() => (land ? buildNavGrid(land) : null), [land]);
+  const baseNav = useMemo(() => (land ? buildNavGrid(land) : null), [land]);
+  const nav = useMemo(
+    () => applySceneryBlocking(baseNav, land, scenery),
+    [baseNav, land, scenery],
+  );
 
   useEffect(() => {
     posRef.current = pos;
@@ -50,6 +57,22 @@ export default function GamePage() {
     });
     if (spawn) setPos(spawn);
   }, [nav, land]);
+
+  useEffect(() => {
+    if (!land) return undefined;
+    const bounds = regionGameBounds(land);
+    let cancelled = false;
+    fetchScenery(bounds)
+      .then((data) => {
+        if (!cancelled) setScenery(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setStatus(err.message || "Couldn't load scenery.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [land]);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -127,6 +150,51 @@ export default function GamePage() {
     });
   }
 
+  function walkToScenery(placement) {
+    if (!nav || !placement?.tile) return;
+    const goal = nearestWalkable(nav, placement.tile);
+    if (!goal) {
+      setStatus("You can't reach that.");
+      return;
+    }
+    startWalk(goal);
+  }
+
+  function onSceneryClick(placement) {
+    closeMenu();
+    walkToScenery(placement);
+  }
+
+  function onSceneryContextMenu(hit) {
+    if (!hit?.placement) {
+      closeMenu();
+      return;
+    }
+    const { placement, screen } = hit;
+    const { kind } = placement;
+    const commands = (kind.commands || []).filter(Boolean);
+    const items = [];
+    if (nearestWalkable(nav, placement.tile)) {
+      items.push({ id: "walk", label: "Walk here" });
+    }
+    for (const command of commands) {
+      const id = command.toLowerCase() === "examine" ? "examine" : `cmd:${command}`;
+      items.push({ id, label: `${command} ${kind.name}` });
+    }
+    if (!commands.some((command) => command.toLowerCase() === "examine")) {
+      items.push({ id: "examine", label: `Examine ${kind.name}` });
+    }
+    items.push({ id: "cancel", label: "Cancel" });
+
+    setMenu({
+      x: screen.x,
+      y: screen.y,
+      title: kind.name,
+      items,
+      payload: { type: "scenery", placement },
+    });
+  }
+
   function onInventoryContextMenu({ clientX, clientY, slot }) {
     const item = slot.item;
     if (!item) return;
@@ -160,6 +228,17 @@ export default function GamePage() {
         startWalk(payload.tile);
       } else if (actionId === "examine") {
         setStatus(payload.info.examine);
+      }
+      return;
+    }
+
+    if (payload.type === "scenery") {
+      if (actionId === "walk") {
+        walkToScenery(payload.placement);
+      } else if (actionId === "examine") {
+        setStatus(payload.placement.kind.description || "Nothing interesting.");
+      } else if (actionId.startsWith("cmd:")) {
+        setStatus("Nothing interesting happens.");
       }
       return;
     }
@@ -216,10 +295,19 @@ export default function GamePage() {
         playerPos={pos}
         playerFacing={facing}
         destination={destination}
-        selectedTile={menu?.payload.type === "world" ? menu.payload.tile : null}
+        selectedTile={
+          menu?.payload.type === "world"
+            ? menu.payload.tile
+            : menu?.payload.type === "scenery"
+              ? menu.payload.placement.tile
+              : null
+        }
+        scenery={scenery}
         onLoad={onLandscapeLoad}
         onTileClick={onTileClick}
         onTileContextMenu={onTileContextMenu}
+        onSceneryClick={onSceneryClick}
+        onSceneryContextMenu={onSceneryContextMenu}
       />
 
       <div className="landscape-hud">

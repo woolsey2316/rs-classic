@@ -129,7 +129,7 @@ function export3dRegion({
         walls,
         spawn: {
             // Lumbridge castle courtyard, relative to this exported region.
-            x: 72,
+            x: 71,
             z: 72
         }
     };

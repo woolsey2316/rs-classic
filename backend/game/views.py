@@ -4,13 +4,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Equipment, GroundItem, InventorySlot, Player
+from .models import Equipment, GroundItem, InventorySlot, Player, Scenery, SceneryKind
 from .serializers import (
     EquipSerializer,
     GroundItemSerializer,
     PlayerSerializer,
     PositionSerializer,
     RegisterSerializer,
+    SceneryKindSerializer,
     TakeSerializer,
     UnequipSerializer,
 )
@@ -251,5 +252,60 @@ class TakeView(APIView):
                     GroundItem.objects.select_related("item").all(),
                     many=True,
                 ).data,
+            }
+        )
+
+
+def _query_int(params, name):
+    raw = params.get(name)
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+class WorldSceneryView(APIView):
+    """Scenery definitions and placements inside a world-coordinate bbox."""
+
+    def get(self, request):
+        min_x = _query_int(request.query_params, "min_x")
+        max_x = _query_int(request.query_params, "max_x")
+        min_y = _query_int(request.query_params, "min_y")
+        max_y = _query_int(request.query_params, "max_y")
+        if None in (min_x, max_x, min_y, max_y):
+            return Response(
+                {"detail": "min_x, max_x, min_y, and max_y are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if min_x > max_x:
+            min_x, max_x = max_x, min_x
+        if min_y > max_y:
+            min_y, max_y = max_y, min_y
+
+        placements = list(
+            Scenery.objects.select_related("kind").filter(
+                x__gte=min_x,
+                x__lte=max_x,
+                y__gte=min_y,
+                y__lte=max_y,
+            )
+        )
+        kind_ids = {obj.kind_id for obj in placements}
+        kinds = SceneryKind.objects.filter(pk__in=kind_ids) if kind_ids else []
+        return Response(
+            {
+                "kinds": SceneryKindSerializer(kinds, many=True).data,
+                "objects": [
+                    {
+                        "id": obj.id,
+                        "kind": obj.kind.rsc_id,
+                        "x": obj.x,
+                        "y": obj.y,
+                        "direction": obj.direction,
+                    }
+                    for obj in placements
+                ],
             }
         )
