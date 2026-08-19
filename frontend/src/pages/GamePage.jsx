@@ -19,7 +19,7 @@ import { useAuth } from "../hooks/useAuth";
 const STEP_MS = 180;
 const IDLE_STATUS = "Click the ground to walk. Right-click for options.";
 
-export default function LandscapePage() {
+export default function GamePage() {
   const { player, setPlayer, logout } = useAuth();
   const [land, setLand] = useState(null);
   const [pos, setPos] = useState(null);

@@ -3,7 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import AuthPage from "./pages/AuthPage";
 
-const LandscapePage = lazy(() => import("./pages/LandscapePage"));
+const GamePage = lazy(() => import("./pages/GamePage"));
 
 function Protected({ children }) {
   const { token, loading } = useAuth();
@@ -25,12 +25,11 @@ export default function App() {
         element={
           <Protected>
             <Suspense fallback={<div className="boot-screen">Building terrain…</div>}>
-              <LandscapePage />
+              <GamePage />
             </Suspense>
           </Protected>
         }
       />
-      <Route path="/landscape-3d" element={<Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

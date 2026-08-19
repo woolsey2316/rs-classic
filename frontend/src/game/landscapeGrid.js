@@ -82,12 +82,31 @@ export function isWalkable(nav, x, z) {
   return !nav.blockedTiles[z * nav.width + x];
 }
 
-function canStep(nav, from, to) {
-  if (!isWalkable(nav, to.x, to.z)) return false;
-  return !nav.blockedEdges.has(edgeKey(from.x, from.z, to.x, to.z));
+function wallBetween(nav, a, b) {
+  return nav.blockedEdges.has(edgeKey(a.x, a.z, b.x, b.z));
 }
 
-/** Breadth-first search over the landscape grid, 4-directional like RSC. */
+function canStep(nav, from, to) {
+  if (!isWalkable(nav, to.x, to.z)) return false;
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  if (Math.abs(dx) + Math.abs(dz) === 1) {
+    return !wallBetween(nav, from, to);
+  }
+  if (Math.abs(dx) !== 1 || Math.abs(dz) !== 1) return false;
+
+  const eastWest = { x: from.x + dx, z: from.z };
+  const northSouth = { x: from.x, z: from.z + dz };
+  // Don't clip a blocked tile or a wall sitting on either edge of the corner.
+  if (!isWalkable(nav, eastWest.x, eastWest.z) || !isWalkable(nav, northSouth.x, northSouth.z)) {
+    return false;
+  }
+  if (wallBetween(nav, from, eastWest) || wallBetween(nav, from, northSouth)) return false;
+  if (wallBetween(nav, eastWest, to) || wallBetween(nav, northSouth, to)) return false;
+  return true;
+}
+
+/** Breadth-first search over the landscape grid, 8-directional like RSC. */
 export function findLandscapePath(nav, start, goal) {
   if (!nav || !start || !goal) return [];
   if (!isWalkable(nav, goal.x, goal.z)) return [];
@@ -101,6 +120,10 @@ export function findLandscapePath(nav, start, goal) {
     [-1, 0],
     [0, 1],
     [0, -1],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
   ];
 
   while (queue.length) {
