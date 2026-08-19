@@ -60,6 +60,15 @@ ITEMS = [
         "sprite": "10-coins.png",
     },
     {
+        "key": "logs",
+        "name": "Logs",
+        "description": "A number of wooden logs.",
+        "equip_slot": None,
+        "stackable": True,
+        "color": "#8b6914",
+        "sprite": "14-logs.png",
+    },
+    {
         "key": "bronze_dagger",
         "name": "Bronze Dagger",
         "description": "A small bronze dagger.",

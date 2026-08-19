@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ChopView,
     DropView,
     EquipView,
     MeView,
@@ -24,4 +25,5 @@ urlpatterns = [
     path("inventory/unequip/", UnequipView.as_view(), name="unequip"),
     path("inventory/drop/", DropView.as_view(), name="drop"),
     path("world/take/", TakeView.as_view(), name="take"),
+    path("world/chop/", ChopView.as_view(), name="chop"),
 ]

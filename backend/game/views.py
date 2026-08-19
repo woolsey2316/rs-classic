@@ -6,6 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Equipment, GroundItem, InventorySlot, Player, Scenery, SceneryKind
 from .serializers import (
+    ChopSerializer,
     EquipSerializer,
     GroundItemSerializer,
     PlayerSerializer,
@@ -15,6 +16,7 @@ from .serializers import (
     TakeSerializer,
     UnequipSerializer,
 )
+from .woodcutting import attempt_chop
 from .world import WORLD
 
 
@@ -264,6 +266,38 @@ def _query_int(params, name):
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+class ChopView(APIView):
+    """Chop a tree when standing adjacent, with an axe in inventory or equipment."""
+
+    def post(self, request):
+        serializer = ChopSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        player = get_player(request.user)
+
+        result = attempt_chop(
+            player,
+            serializer.validated_data["scenery_id"],
+            serializer.validated_data["player_x"],
+            serializer.validated_data["player_y"],
+        )
+
+        if not result.get("ok"):
+            return Response(
+                {"detail": result["message"], "success": result.get("success", False)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = {
+            "player": PlayerSerializer(player).data,
+            "message": result["message"],
+            "success": True,
+            "xp_gained": result.get("xp_gained", 0),
+        }
+        if result.get("scenery_update"):
+            payload["scenery_update"] = result["scenery_update"]
+        return Response(payload)
 
 
 class WorldSceneryView(APIView):

@@ -86,6 +86,17 @@ export async function dropItem(slotIndex) {
   });
 }
 
+export async function chopTree(sceneryId, playerX, playerY) {
+  return api("/api/world/chop/", {
+    method: "POST",
+    body: {
+      scenery_id: sceneryId,
+      player_x: playerX,
+      player_y: playerY,
+    },
+  });
+}
+
 export async function fetchScenery({ minX, maxX, minY, maxY }) {
   const params = new URLSearchParams({
     min_x: String(minX),

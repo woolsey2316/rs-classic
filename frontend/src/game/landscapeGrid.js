@@ -265,3 +265,11 @@ export function nearestWalkable(nav, origin, maxRadius = 12) {
   }
   return null;
 }
+
+/** True when `a` is on a neighbouring tile of `b` (including diagonals). */
+export function isAdjacentTile(a, b) {
+  if (!a || !b) return false;
+  const dx = Math.abs(a.x - b.x);
+  const dz = Math.abs(a.z - b.z);
+  return dx <= 1 && dz <= 1 && (dx !== 0 || dz !== 0);
+}

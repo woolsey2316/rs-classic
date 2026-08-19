@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dropItem, equipItem, fetchScenery, unequipItem } from "../api/client";
+import { dropItem, equipItem, fetchScenery, chopTree, unequipItem } from "../api/client";
 import ContextMenu from "../components/ContextMenu";
 import EquipmentPanel from "../components/EquipmentPanel";
 import InventoryPanel from "../components/InventoryPanel";
@@ -10,6 +10,7 @@ import {
   applySceneryBlocking,
   buildNavGrid,
   findLandscapePath,
+  isAdjacentTile,
   isWalkable,
   nearestWalkable,
   regionGameBounds,
@@ -35,6 +36,7 @@ export default function GamePage() {
   const pathRef = useRef([]);
   const walkingRef = useRef(false);
   const posRef = useRef(null);
+  const pendingActionRef = useRef(null);
 
   const baseNav = useMemo(() => (land ? buildNavGrid(land) : null), [land]);
   const nav = useMemo(
@@ -96,7 +98,13 @@ export default function GamePage() {
     } finally {
       walkingRef.current = false;
       setDestination(null);
-      setStatus(IDLE_STATUS);
+      const pending = pendingActionRef.current;
+      pendingActionRef.current = null;
+      if (pending) {
+        await pending();
+      } else {
+        setStatus(IDLE_STATUS);
+      }
     }
   }, []);
 
@@ -124,6 +132,7 @@ export default function GamePage() {
   function onTileClick(tile) {
     closeMenu();
     setTab(null);
+    pendingActionRef.current = null;
     startWalk(tile);
   }
 
@@ -152,14 +161,59 @@ export default function GamePage() {
     });
   }
 
-  function walkToScenery(placement) {
+  function walkToScenery(placement, onArrive) {
     if (!nav || !placement?.tile) return;
     const goal = nearestWalkable(nav, placement.tile);
     if (!goal) {
       setStatus("You can't reach that.");
       return;
     }
+    if (onArrive) {
+      pendingActionRef.current = onArrive;
+    } else {
+      pendingActionRef.current = null;
+    }
     startWalk(goal);
+  }
+
+  const tryChop = useCallback(
+    async (placement) => {
+      if (!land || !placement?.object?.id || !posRef.current) return;
+      const game = toGameCoords(land, posRef.current.x, posRef.current.z);
+      setStatus("You swing your axe at the tree…");
+      try {
+        const result = await chopTree(placement.object.id, game.x, game.y);
+        setPlayer(result.player);
+        if (result.scenery_update) {
+          setScenery((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              objects: prev.objects.map((obj) =>
+                obj.id === result.scenery_update.id
+                  ? { ...obj, kind: result.scenery_update.kind }
+                  : obj,
+              ),
+            };
+          });
+        }
+        const xpNote =
+          result.xp_gained > 0 ? ` (+${result.xp_gained} woodcutting xp)` : "";
+        setStatus(`${result.message}${xpNote}`);
+      } catch (err) {
+        setStatus(err.message);
+      }
+    },
+    [land, setPlayer],
+  );
+
+  function chopScenery(placement) {
+    if (!placement?.tile || !posRef.current) return;
+    if (isAdjacentTile(posRef.current, placement.tile)) {
+      tryChop(placement);
+      return;
+    }
+    walkToScenery(placement, () => tryChop(placement));
   }
 
   function onSceneryClick(placement) {
@@ -240,7 +294,12 @@ export default function GamePage() {
       } else if (actionId === "examine") {
         setStatus(payload.placement.kind.description || "Nothing interesting.");
       } else if (actionId.startsWith("cmd:")) {
-        setStatus("Nothing interesting happens.");
+        const command = actionId.slice(4);
+        if (command === "Chop") {
+          chopScenery(payload.placement);
+        } else {
+          setStatus("Nothing interesting happens.");
+        }
       }
       return;
     }
