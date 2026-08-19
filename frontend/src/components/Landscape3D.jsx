@@ -158,20 +158,7 @@ function makePlayerMarker(textures) {
   );
   sprite.renderOrder = 3;
 
-  const feet = new THREE.Mesh(
-    new THREE.RingGeometry(0.22, 0.34, 20),
-    new THREE.MeshBasicMaterial({
-      color: 0x1a140e,
-      transparent: true,
-      opacity: 0.45,
-      side: THREE.DoubleSide,
-      depthTest: false,
-    }),
-  );
-  feet.rotation.x = -Math.PI / 2;
-  feet.position.y = 0.04;
-  feet.renderOrder = 2;
-  group.add(feet, sprite);
+  group.add(sprite);
   group.userData = { sprite, materials, extraTextures, viewKey: "" };
   return group;
 }
@@ -204,23 +191,6 @@ function updatePlayerSprite(player, camera) {
   if (player.userData.viewKey === key) return;
   player.userData.viewKey = key;
   sprite.material = materials[view.flip ? `${view.angle}-flip` : view.angle];
-}
-
-function makeTileMarker(colour) {
-  const marker = new THREE.Mesh(
-    new THREE.RingGeometry(0.3, 0.48, 24),
-    new THREE.MeshBasicMaterial({
-      color: colour,
-      transparent: true,
-      opacity: 0.85,
-      side: THREE.DoubleSide,
-      depthTest: false,
-    }),
-  );
-  marker.rotation.x = -Math.PI / 2;
-  marker.renderOrder = 2;
-  marker.visible = false;
-  return marker;
 }
 
 function loadClickIconTextures() {
@@ -281,6 +251,22 @@ function updateClickIndicator(indicator, data, animation, now) {
     animation.z + 0.5,
   );
   return true;
+}
+
+function followPlayerWithCamera(view, playerPos) {
+  if (!playerPos || !view?.controls || !view?.camera || !view?.data) return;
+  const { data, controls, camera } = view;
+  const nextTarget = new THREE.Vector3(
+    playerPos.x + 0.5,
+    heightAt(data, playerPos.x, playerPos.z),
+    playerPos.z + 0.5,
+  );
+  if (view.cameraFollowTarget) {
+    const delta = nextTarget.clone().sub(view.cameraFollowTarget);
+    camera.position.add(delta);
+  }
+  controls.target.copy(nextTarget);
+  view.cameraFollowTarget = nextTarget;
 }
 
 /**
@@ -419,10 +405,8 @@ export default function Landscape3D({
         const sceneryKit = createSceneryKit();
         resources.push({ dispose: () => sceneryKit.dispose() });
 
-        const destinationMarker = makeTileMarker(0xffffff);
-        const selectionMarker = makeTileMarker(0x8ce27a);
         const clickIndicator = makeClickIndicator(clickIconTextures);
-        scene.add(destinationMarker, selectionMarker, clickIndicator.sprite);
+        scene.add(clickIndicator.sprite);
         clickIconTextures.forEach((texture) => resources.push(texture));
         clickIndicator.materials.forEach((material) => resources.push(material));
 
@@ -550,11 +534,10 @@ export default function Landscape3D({
           data,
           player,
           camera,
-          destinationMarker,
-          selectionMarker,
           clickIndicator,
           clickAnim: null,
           controls,
+          cameraFollowTarget: controls.target.clone(),
           sceneryGroup,
           sceneryKit,
         };
@@ -605,7 +588,7 @@ export default function Landscape3D({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const { data, player, destinationMarker, selectionMarker } = view;
+    const { data, player, selectionMarker } = view;
 
     if (playerPos) {
       player.visible = true;
@@ -619,28 +602,7 @@ export default function Landscape3D({
       player.visible = false;
     }
 
-    if (destination) {
-      destinationMarker.visible = true;
-      destinationMarker.position.set(
-        destination.x + 0.5,
-        heightAt(data, destination.x, destination.z) + 0.06,
-        destination.z + 0.5,
-      );
-    } else {
-      destinationMarker.visible = false;
-    }
-
-    if (selectedTile) {
-      selectionMarker.visible = true;
-      selectionMarker.position.set(
-        selectedTile.x + 0.5,
-        heightAt(data, selectedTile.x, selectedTile.z) + 0.08,
-        selectedTile.z + 0.5,
-      );
-    } else {
-      selectionMarker.visible = false;
-    }
-  }, [playerPos, playerFacing, destination, selectedTile, ready]);
+  }, [playerPos, playerFacing, ready]);
 
   useEffect(() => {
     const view = viewRef.current;
