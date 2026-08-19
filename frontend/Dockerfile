@@ -2,20 +2,12 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
-    pkgconf \
-    cairo-dev \
-    pango-dev \
-    jpeg-dev \
-    giflib-dev \
-    librsvg-dev \
-    pixman-dev
+# git: npm installs @2003scape/rsc-sprites from GitHub (dev tooling only)
+RUN apk add --no-cache git
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+# Skip native canvas builds; the Vite app does not use node-canvas at runtime.
+RUN npm ci --ignore-scripts
 
 COPY . .
 

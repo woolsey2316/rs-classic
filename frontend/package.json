@@ -13,16 +13,15 @@
     "export-landscape": "node src/landscape/landscape.cjs"
   },
   "dependencies": {
-    "@2003scape/rsc-config": "^2.0.0",
-    "@2003scape/rsc-landscape": "^2.0.1",
-    "@2003scape/rsc-sprites": "github:2003scape/rsc-sprites",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.2.0",
-    "rsc-sprite-generator": "file:../../rsc-sprite-generator",
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@2003scape/rsc-config": "^2.0.0",
+    "@2003scape/rsc-landscape": "^2.0.1",
+    "@2003scape/rsc-sprites": "github:2003scape/rsc-sprites",
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^6.2.0"
   },

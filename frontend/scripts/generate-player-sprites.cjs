@@ -6,7 +6,17 @@
  */
 const fs = require("fs");
 const path = require("path");
-const spriteGenerator = require("rsc-sprite-generator");
+
+let spriteGenerator;
+try {
+  spriteGenerator = require("rsc-sprite-generator");
+} catch {
+  console.error(
+    "rsc-sprite-generator is not installed. From the repo root:\n" +
+      "  npm install --prefix frontend --save-dev file:../rsc-sprite-generator",
+  );
+  process.exit(1);
+}
 
 const OUT_DIR = path.resolve(__dirname, "../public/sprites/player");
 // One planted frame per unique yaw: S, SW, W, NW, N.
