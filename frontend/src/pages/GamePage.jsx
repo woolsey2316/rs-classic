@@ -23,6 +23,7 @@ export default function GamePage() {
   const { player, setPlayer, logout } = useAuth();
   const [land, setLand] = useState(null);
   const [pos, setPos] = useState(null);
+  const [facing, setFacing] = useState({ x: 0, z: 1 });
   const [destination, setDestination] = useState(null);
   const [status, setStatus] = useState(IDLE_STATUS);
   const [tab, setTab] = useState("skills");
@@ -58,6 +59,12 @@ export default function GamePage() {
     try {
       while (pathRef.current.length) {
         const next = pathRef.current.shift();
+        const current = posRef.current;
+        if (current) {
+          const dx = next.x - current.x;
+          const dz = next.z - current.z;
+          if (dx !== 0 || dz !== 0) setFacing({ x: dx, z: dz });
+        }
         setPos(next);
         posRef.current = next;
         await new Promise((resolve) => setTimeout(resolve, STEP_MS));
@@ -207,6 +214,7 @@ export default function GamePage() {
     <main className="landscape-page">
       <Landscape3D
         playerPos={pos}
+        playerFacing={facing}
         destination={destination}
         selectedTile={menu?.payload.type === "world" ? menu.payload.tile : null}
         onLoad={onLandscapeLoad}

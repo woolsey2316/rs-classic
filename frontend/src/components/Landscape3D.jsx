@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import {
+  PLAYER_SPRITE_ANGLES,
+  PLAYER_SPRITE_SIZE,
+  playerSpriteUrl,
+  spriteViewFromCamera,
+} from "../game/playerSprite";
 
 function colourAt(data, index) {
   const [r, g, b] = data.palette[data.colours[index]] || [60, 90, 45];
@@ -84,33 +90,95 @@ function buildWalls(data) {
   return geometry;
 }
 
-function makePlayerMarker() {
+const PLAYER_HEIGHT = 1.35;
+
+function spriteMaterial(texture) {
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+  });
+}
+
+function flippedTexture(texture) {
+  const clone = texture.clone();
+  clone.wrapS = THREE.RepeatWrapping;
+  clone.repeat.x = -1;
+  clone.offset.x = 1;
+  clone.needsUpdate = true;
+  return clone;
+}
+
+function makePlayerMarker(textures) {
   const group = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.18, 0.28, 0.9, 10),
-    new THREE.MeshBasicMaterial({ color: 0xffe066 }),
+  const materials = {};
+  const extraTextures = [];
+  for (const angle of PLAYER_SPRITE_ANGLES) {
+    materials[angle] = spriteMaterial(textures[angle]);
+    const flipped = flippedTexture(textures[angle]);
+    extraTextures.push(flipped);
+    materials[`${angle}-flip`] = spriteMaterial(flipped);
+  }
+
+  const sprite = new THREE.Sprite(materials[0]);
+  sprite.center.set(0.5, 0);
+  sprite.scale.set(
+    PLAYER_HEIGHT * (PLAYER_SPRITE_SIZE.width / PLAYER_SPRITE_SIZE.height),
+    PLAYER_HEIGHT,
+    1,
   );
-  body.position.y = 0.5;
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 10, 8),
-    new THREE.MeshBasicMaterial({ color: 0xfff2b0 }),
-  );
-  head.position.y = 1.05;
+  sprite.renderOrder = 3;
+
   const feet = new THREE.Mesh(
-    new THREE.RingGeometry(0.28, 0.42, 20),
+    new THREE.RingGeometry(0.22, 0.34, 20),
     new THREE.MeshBasicMaterial({
-      color: 0xffe066,
+      color: 0x1a140e,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.45,
       side: THREE.DoubleSide,
       depthTest: false,
     }),
   );
   feet.rotation.x = -Math.PI / 2;
-  feet.position.y = 0.05;
+  feet.position.y = 0.04;
   feet.renderOrder = 2;
-  group.add(body, head, feet);
+  group.add(feet, sprite);
+  group.userData = { sprite, materials, extraTextures, viewKey: "" };
   return group;
+}
+
+function loadPlayerTextures() {
+  const loader = new THREE.TextureLoader();
+  return Promise.all(
+    PLAYER_SPRITE_ANGLES.map(
+      (angle) =>
+        new Promise((resolve, reject) => {
+          loader.load(
+            playerSpriteUrl(angle),
+            (texture) => resolve([angle, texture]),
+            undefined,
+            () => reject(new Error(`Failed to load ${playerSpriteUrl(angle)}`)),
+          );
+        }),
+    ),
+  ).then((entries) => Object.fromEntries(entries));
+}
+
+function updatePlayerSprite(player, camera) {
+  const { sprite, materials } = player.userData;
+  if (!sprite) return;
+  const view = spriteViewFromCamera(player.userData.facing, {
+    x: camera.position.x - player.position.x,
+    z: camera.position.z - player.position.z,
+  });
+  const key = `${view.angle}:${view.flip}`;
+  if (player.userData.viewKey === key) return;
+  player.userData.viewKey = key;
+  sprite.material = materials[view.flip ? `${view.angle}-flip` : view.angle];
 }
 
 function makeTileMarker(colour) {
@@ -139,6 +207,7 @@ function makeTileMarker(colour) {
 export default function Landscape3D({
   src = "/landscape/lumbridge-3d.json",
   playerPos = null,
+  playerFacing = { x: 0, z: 1 },
   destination = null,
   selectedTile = null,
   onLoad,
@@ -219,9 +288,15 @@ export default function Landscape3D({
         scene.add(new THREE.LineSegments(wallGeometry, wallMaterial));
         resources.push(wallGeometry, wallMaterial);
 
-        const player = makePlayerMarker();
+        const playerTextures = await loadPlayerTextures();
+        if (disposed) return;
+        const player = makePlayerMarker(playerTextures);
         player.visible = false;
+        player.userData.facing = { x: 0, z: 1 };
         scene.add(player);
+        Object.values(playerTextures).forEach((texture) => resources.push(texture));
+        player.userData.extraTextures.forEach((texture) => resources.push(texture));
+        Object.values(player.userData.materials).forEach((material) => resources.push(material));
 
         const destinationMarker = makeTileMarker(0xffffff);
         const selectionMarker = makeTileMarker(0x8ce27a);
@@ -311,6 +386,7 @@ export default function Landscape3D({
         viewRef.current = {
           data,
           player,
+          camera,
           destinationMarker,
           selectionMarker,
           controls,
@@ -323,6 +399,7 @@ export default function Landscape3D({
         const render = () => {
           if (disposed) return;
           controls.update();
+          if (player.visible) updatePlayerSprite(player, camera);
           renderer.render(scene, camera);
           frame = requestAnimationFrame(render);
         };
@@ -353,6 +430,7 @@ export default function Landscape3D({
 
     if (playerPos) {
       player.visible = true;
+      player.userData.facing = playerFacing;
       player.position.set(
         playerPos.x + 0.5,
         heightAt(data, playerPos.x, playerPos.z),
@@ -383,7 +461,7 @@ export default function Landscape3D({
     } else {
       selectionMarker.visible = false;
     }
-  }, [playerPos, destination, selectedTile, ready]);
+  }, [playerPos, playerFacing, destination, selectedTile, ready]);
 
   return (
     <div className="landscape-3d">
