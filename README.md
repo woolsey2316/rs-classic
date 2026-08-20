@@ -5,7 +5,7 @@ A starter **RuneScape Classic**-inspired MMO client: React (Vite) frontend, Djan
 ## Features
 
 - Sign up / sign in (JWT)
-- Point-and-click walking on a small overworld (BFS pathfinding, server-validated steps)
+- Point-and-click walking on the 3D Lumbridge landscape
 - All **18 RSC skills** with the classic XP curve (level 99 = 13,034,431 XP; Hits starts at 10)
 - **30-slot inventory**
 - Equipment: helmet, arrows, gloves, body, legs, boots, ring, weapon, cape, amulet
@@ -41,8 +41,7 @@ docker compose exec backend python manage.py createsuperuser
 | POST | `/api/auth/register/` | Create account + player |
 | POST | `/api/auth/login/` | JWT access + refresh |
 | GET | `/api/auth/me/` | Current player state |
-| GET | `/api/world/` | Tile map |
-| PATCH | `/api/player/position/` | Walk one tile |
+| GET | `/api/world/scenery/` | Scenery in a world-coordinate bbox |
 | POST | `/api/inventory/equip/` | Equip from inventory slot |
 | POST | `/api/inventory/unequip/` | Unequip to inventory |
 

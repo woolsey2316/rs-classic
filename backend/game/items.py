@@ -288,33 +288,3 @@ ITEMS = [
     },
 ]
 
-
-# Scattered along Lumbridge Meadow's path and clearing.
-GROUND_SPAWNS = [
-    ("bronze_dagger", 14, 10, 1),
-    ("iron_dagger", 10, 9, 1),
-    ("bronze_sword", 16, 10, 1),
-    ("iron_sword", 18, 10, 1),
-    ("steel_sword", 20, 10, 1),
-    ("longsword", 8, 10, 1),
-    ("scimitar", 22, 10, 1),
-    ("bronze_axe", 15, 8, 1),
-    ("iron_battleaxe", 17, 8, 1),
-    ("steel_battleaxe", 6, 10, 1),
-    ("bronze_mace", 9, 11, 1),
-    ("iron_mace", 11, 11, 1),
-    ("warhammer", 19, 11, 1),
-    ("shortbow", 7, 9, 1),
-    ("longbow", 5, 10, 1),
-    ("iron_arrows", 5, 11, 25),
-    ("bronze_spear", 13, 8, 1),
-    ("halberd", 21, 11, 1),
-    ("wooden_shield", 14, 8, 1),
-    ("iron_square_shield", 16, 8, 1),
-    ("kite_shield", 4, 10, 1),
-    ("staff", 23, 10, 1),
-    ("magic_staff", 21, 9, 1),
-    ("wand", 12, 8, 1),
-    ("bronze_claws", 8, 11, 1),
-    ("steel_claws", 10, 8, 1),
-]

@@ -11,7 +11,6 @@ from .serializers import (
     GroundItemSerializer,
     ItemSerializer,
     PlayerSerializer,
-    PositionSerializer,
     RegisterSerializer,
     SceneryKindSerializer,
     TakeSerializer,
@@ -20,7 +19,6 @@ from .serializers import (
 )
 from .treasure_chest import take_from_treasure_chest
 from .woodcutting import attempt_chop
-from .world import WORLD
 
 
 def get_player(user: User) -> Player:
@@ -63,47 +61,6 @@ class PlayerStateView(APIView):
     def get(self, request):
         player = get_player(request.user)
         return Response(PlayerSerializer(player).data)
-
-
-class PositionView(APIView):
-    def patch(self, request):
-        serializer = PositionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        x = serializer.validated_data["x"]
-        y = serializer.validated_data["y"]
-
-        if not WORLD.is_walkable(x, y):
-            return Response(
-                {"detail": "That tile cannot be walked on."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        player = get_player(request.user)
-        # Only allow moving to an adjacent tile (or same) to reduce teleport cheating.
-        dx = abs(player.x - x)
-        dy = abs(player.y - y)
-        if dx > 1 or dy > 1:
-            return Response(
-                {"detail": "Move one step at a time."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        player.x = x
-        player.y = y
-        player.save(update_fields=["x", "y", "updated_at"])
-        return Response({"x": player.x, "y": player.y})
-
-
-class WorldView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request):
-        data = WORLD.to_dict()
-        data["ground_items"] = GroundItemSerializer(
-            GroundItem.objects.select_related("item").all(),
-            many=True,
-        ).data
-        return Response(data)
 
 
 class EquipView(APIView):

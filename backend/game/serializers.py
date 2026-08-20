@@ -174,11 +174,6 @@ class TreasureChestTakeSerializer(serializers.Serializer):
     player_y = serializers.IntegerField()
 
 
-class PositionSerializer(serializers.Serializer):
-    x = serializers.IntegerField(min_value=0, max_value=63)
-    y = serializers.IntegerField(min_value=0, max_value=63)
-
-
 class EquipSerializer(serializers.Serializer):
     slot_index = serializers.IntegerField(min_value=0, max_value=29)
 

@@ -54,17 +54,6 @@ export async function fetchMe() {
   return api("/api/auth/me/");
 }
 
-export async function fetchWorld() {
-  return api("/api/world/");
-}
-
-export async function patchPosition(x, y) {
-  return api("/api/player/position/", {
-    method: "PATCH",
-    body: { x, y },
-  });
-}
-
 export async function equipItem(slotIndex) {
   return api("/api/inventory/equip/", {
     method: "POST",

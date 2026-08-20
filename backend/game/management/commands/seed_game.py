@@ -1,11 +1,11 @@
 from django.core.management.base import BaseCommand
 
-from game.items import GROUND_SPAWNS, ITEMS
-from game.models import GroundItem, Item
+from game.items import ITEMS
+from game.models import Item
 
 
 class Command(BaseCommand):
-    help = "Seed item definitions and scatter KayKit weapons on the meadow."
+    help = "Seed item definitions."
 
     def handle(self, *args, **options):
         created = 0
@@ -29,15 +29,3 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(f"Seeded items: {created} created, {updated} updated.")
         )
-
-        placed = 0
-        for key, x, y, qty in GROUND_SPAWNS:
-            item = Item.objects.filter(key=key).first()
-            if not item:
-                continue
-            if GroundItem.objects.filter(item=item).exists():
-                continue
-            GroundItem.objects.create(item=item, x=x, y=y, quantity=qty)
-            placed += 1
-        if placed:
-            self.stdout.write(self.style.SUCCESS(f"Placed {placed} ground items."))
