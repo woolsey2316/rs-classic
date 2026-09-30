@@ -102,12 +102,14 @@ export async function fetchTreasureChestContents(sceneryId) {
   return api(`/api/world/treasure-chest/${sceneryId}/`);
 }
 
-export async function takeFromTreasureChest(sceneryId, itemKey, playerX, playerY) {
+export async function takeFromTreasureChest(sceneryId, item, playerX, playerY) {
   return api("/api/world/treasure-chest/take/", {
     method: "POST",
     body: {
       scenery_id: sceneryId,
-      item_key: itemKey,
+      item_key: item.key,
+      name: item.name,
+      sprite: item.sprite,
       player_x: playerX,
       player_y: playerY,
     },

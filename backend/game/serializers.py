@@ -183,6 +183,8 @@ class TreasureChestTakeSerializer(serializers.Serializer):
     item_key = serializers.SlugField(max_length=64)
     player_x = serializers.IntegerField()
     player_y = serializers.IntegerField()
+    name = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    sprite = serializers.CharField(max_length=64, required=False, allow_blank=True)
 
 
 class EquipSerializer(serializers.Serializer):

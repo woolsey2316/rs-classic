@@ -19,6 +19,7 @@ from .serializers import (
     UnequipSerializer,
 )
 from .doors import toggle_door
+from .item_equip import ensure_item_equip_slot
 from .tick import TICK_WAIT, reserve_tick
 from .treasure_chest import take_from_treasure_chest
 from .woodcutting import attempt_chop
@@ -33,6 +34,8 @@ def get_player(user: User) -> Player:
     player.ensure_inventory()
     player.ensure_equipment()
     player.restore_skill_levels()
+    for slot in player.inventory_slots.select_related("item").filter(item__isnull=False):
+        ensure_item_equip_slot(slot.item)
     return player
 
 
@@ -347,6 +350,8 @@ class TreasureChestTakeView(APIView):
             serializer.validated_data["item_key"],
             serializer.validated_data["player_x"],
             serializer.validated_data["player_y"],
+            name=serializer.validated_data.get("name") or "",
+            sprite=serializer.validated_data.get("sprite") or "",
         )
 
         if not result.get("ok"):

@@ -23,7 +23,7 @@ export default function TreasureChestPanel({ chest, onTake, onClose }) {
               type="button"
               className="inv-slot filled treasure-chest-slot"
               title={item.name}
-              onClick={() => onTake(item.key, item.name)}
+              onClick={() => onTake(item)}
             >
               <ItemIcon item={item} />
             </button>

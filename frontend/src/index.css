@@ -325,6 +325,34 @@ input {
   background: rgba(26, 20, 14, 0.86);
   border-top: 1px solid var(--border);
   backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.rsc-item-options {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  pointer-events: auto;
+}
+
+.rsc-item-options button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #ffff00;
+  font: 16px "Segoe UI", Tahoma, sans-serif;
+  text-align: left;
+  text-shadow: 1px 1px 0 #000;
+  cursor: pointer;
+}
+
+.rsc-item-options button:hover {
+  color: #ffffff;
 }
 
 .landscape-region {

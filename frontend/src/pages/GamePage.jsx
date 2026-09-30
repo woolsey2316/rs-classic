@@ -45,6 +45,7 @@ export default function GamePage() {
   const [status, setStatus] = useState(IDLE_STATUS);
   const [tab, setTab] = useState(null);
   const [menu, setMenu] = useState(null);
+  const [itemOptions, setItemOptions] = useState(null);
   const [chest, setChest] = useState(null);
   const pathRef = useRef([]);
   const walkingRef = useRef(false);
@@ -164,6 +165,7 @@ export default function GamePage() {
 
   function onTileClick(tile) {
     closeMenu();
+    setItemOptions(null);
     setTab(null);
     setChest(null);
     pendingActionRef.current = null;
@@ -316,10 +318,20 @@ export default function GamePage() {
       if (!placement?.object?.id) return;
       try {
         const data = await fetchTreasureChestContents(placement.object.id);
+        const manifest = await fetch("/sprites/rsc/items/manifest.json").then((res) => {
+          if (!res.ok) throw new Error("Couldn't load the item sprites.");
+          return res.json();
+        });
+        const items = manifest.map((entry) => ({
+          key: `rsc-${entry.id}`,
+          name: entry.name,
+          sprite: entry.file,
+          description: entry.name,
+        }));
         setChest({
           sceneryId: placement.object.id,
           name: data.name,
-          items: data.items,
+          items,
         });
         setTab(null);
         setStatus("You search the treasure chest.");
@@ -339,15 +351,15 @@ export default function GamePage() {
     walkToScenery(placement, () => openTreasureChest(placement));
   }
 
-  async function onTakeFromChest(itemKey, itemName) {
-    if (!chest?.sceneryId || !land || !posRef.current) return;
+  async function onTakeFromChest(item) {
+    if (!chest?.sceneryId || !land || !posRef.current || !item) return;
     const game = toGameCoords(land, posRef.current.x, posRef.current.z);
     try {
       const result = await onTick(() =>
-        takeFromTreasureChest(chest.sceneryId, itemKey, game.x, game.y),
+        takeFromTreasureChest(chest.sceneryId, item, game.x, game.y),
       );
       setPlayer(result.player);
-      setStatus(result.message || `You take the ${itemName.toLowerCase()}.`);
+      setStatus(result.message || `You take the ${item.name.toLowerCase()}.`);
     } catch (err) {
       setStatus(err.message);
     }
@@ -469,25 +481,36 @@ export default function GamePage() {
     });
   }
 
-  function onInventoryContextMenu({ clientX, clientY, slot }) {
+  function inventoryActions(slot) {
     const item = slot.item;
-    if (!item) return;
-
-    const items = [];
+    if (!item) return [];
+    const actions = [];
     if (item.equip_slot) {
-      items.push({ id: "equip", label: "Equip" });
+      actions.push({ id: "equip", label: `Equip ${item.name}` });
     }
-    items.push({ id: "drop", label: "Drop", danger: true });
-    items.push({ id: "examine", label: "Examine" });
-    items.push({ id: "cancel", label: "Cancel" });
+    actions.push({ id: "drop", label: `Drop ${item.name}` });
+    actions.push({ id: "examine", label: `Examine ${item.name}` });
+    return actions;
+  }
 
-    setMenu({
-      x: clientX,
-      y: clientY,
-      title: item.name,
-      items,
-      payload: { type: "inventory", slot },
+  function onInventoryHover(slot) {
+    setItemOptions({
+      slot,
+      items: inventoryActions(slot),
     });
+  }
+
+  async function onItemOption(actionId) {
+    if (!itemOptions) return;
+    const { slot } = itemOptions;
+    setItemOptions(null);
+    if (actionId === "equip") {
+      await onEquip(slot.slot_index);
+    } else if (actionId === "drop") {
+      await onDrop(slot.slot_index, slot.item?.name);
+    } else if (actionId === "examine") {
+      setStatus(examineItem(slot.item, slot.quantity));
+    }
   }
 
   async function onMenuSelect(actionId) {
@@ -533,17 +556,6 @@ export default function GamePage() {
         }
       }
       return;
-    }
-
-    if (payload.type === "inventory") {
-      const { slot } = payload;
-      if (actionId === "equip") {
-        await onEquip(slot.slot_index);
-      } else if (actionId === "drop") {
-        await onDrop(slot.slot_index, slot.item?.name);
-      } else if (actionId === "examine") {
-        setStatus(examineItem(slot.item, slot.quantity));
-      }
     }
   }
 
@@ -613,6 +625,16 @@ export default function GamePage() {
         </button>
       </div>
 
+      {itemOptions && (
+        <div className="rsc-item-options">
+          {itemOptions.items.map((action) => (
+            <button key={action.id} type="button" onClick={() => onItemOption(action.id)}>
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <aside className="rsc-sidebar">
         <div className="rsc-menu" onMouseLeave={() => setTab(null)}>
           <RscActionBar tab={tab} onTabChange={setTab} />
@@ -624,7 +646,7 @@ export default function GamePage() {
             <InventoryPanel
               inventory={player.inventory}
               onEquip={onEquip}
-              onContextMenu={onInventoryContextMenu}
+              onHover={onInventoryHover}
             />
           )}
           {tab === "equipment" && (
