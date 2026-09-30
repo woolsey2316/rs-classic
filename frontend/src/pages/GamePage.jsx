@@ -52,6 +52,7 @@ export default function GamePage() {
   const [tab, setTab] = useState(null);
   const [menu, setMenu] = useState(null);
   const [itemOptions, setItemOptions] = useState(null);
+  const [worldHover, setWorldHover] = useState(null);
   const [chest, setChest] = useState(null);
   const pathRef = useRef([]);
   const walkingRef = useRef(false);
@@ -81,6 +82,8 @@ export default function GamePage() {
   const fightingRef = useRef(null);
   const fightBusyRef = useRef(false);
   const splatSeq = useRef(1);
+  const attackSeq = useRef(0);
+  const [attackClick, setAttackClick] = useState(null);
 
   useEffect(() => {
     ratsStateRef.current = rats;
@@ -354,11 +357,15 @@ export default function GamePage() {
 
   function attackRat(rat) {
     if (!navRef.current || !rat || rat.dead) return;
+    const live = ratsStateRef.current.find((entry) => entry.id === rat.id) || rat;
+    if (!live || live.dead) return;
+    attackSeq.current += 1;
+    setAttackClick({ x: live.x, z: live.z, token: attackSeq.current });
     const engage = () => {
-      const live = ratsStateRef.current.find((entry) => entry.id === rat.id) || rat;
-      if (!live || live.dead) return;
-      if (!isAdjacentTile(posRef.current, live)) {
-        const goal = tileBeside(navRef.current, posRef.current, live);
+      const current = ratsStateRef.current.find((entry) => entry.id === rat.id) || live;
+      if (!current || current.dead) return;
+      if (!isAdjacentTile(posRef.current, current)) {
+        const goal = tileBeside(navRef.current, posRef.current, current);
         if (!goal) {
           setStatus("You can't get close enough to the rat.");
           return;
@@ -367,7 +374,7 @@ export default function GamePage() {
         startWalk(goal);
         return;
       }
-      startFight(live.id);
+      startFight(current.id);
     };
     engage();
   }
@@ -638,9 +645,9 @@ export default function GamePage() {
 
   function onRatClick(rat) {
     closeMenu();
-    if (!nav || !rat) return;
-    const tile = nearestWalkable(nav, { x: rat.x, z: rat.z }, 2);
-    if (tile) startWalk(tile);
+    setItemOptions(null);
+    if (!rat || rat.dead) return;
+    attackRat(rat);
   }
 
   function onRatContextMenu(hit) {
@@ -733,6 +740,22 @@ export default function GamePage() {
       items: inventoryActions(slot),
     });
   }
+
+  function onWorldHover(hit) {
+    setWorldHover(hit);
+  }
+
+  const worldOptions = useMemo(() => {
+    if (!worldHover) return null;
+    if (worldHover.type === "rat" && !worldHover.rat?.dead) {
+      return [{ id: "attack", label: "Attack Rat" }];
+    }
+    if (worldHover.type === "door") {
+      const open = openDoorSet.has(worldHover.door.index);
+      return [{ id: "door", label: open ? "Close Door" : "Open Door" }];
+    }
+    return null;
+  }, [worldHover, openDoorSet]);
 
   async function onItemOption(actionId) {
     if (!itemOptions) return;
@@ -864,6 +887,8 @@ export default function GamePage() {
         onDoorContextMenu={onDoorContextMenu}
         onRatClick={onRatClick}
         onRatContextMenu={onRatContextMenu}
+        onHover={onWorldHover}
+        attackClick={attackClick}
       />
 
       <div className="landscape-hud">
@@ -874,13 +899,17 @@ export default function GamePage() {
         </button>
       </div>
 
-      {itemOptions && (
-        <div className="rsc-item-options">
-          {itemOptions.items.map((action) => (
-            <button key={action.id} type="button" onClick={() => onItemOption(action.id)}>
-              {action.label}
-            </button>
-          ))}
+      {(worldOptions || itemOptions) && (
+        <div className={`rsc-item-options${worldOptions ? " rsc-item-options-label" : ""}`}>
+          {(worldOptions || itemOptions.items).map((action) =>
+            worldOptions ? (
+              <span key={action.id}>{action.label}</span>
+            ) : (
+              <button key={action.id} type="button" onClick={() => onItemOption(action.id)}>
+                {action.label}
+              </button>
+            ),
+          )}
         </div>
       )}
 

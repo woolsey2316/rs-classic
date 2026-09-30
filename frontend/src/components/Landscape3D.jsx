@@ -484,7 +484,7 @@ function updateSplats(view, splats, now) {
 function loadClickIconTextures() {
   const loader = new THREE.TextureLoader();
   return Promise.all(
-    [0, 1, 2, 3].map(
+    [0, 1, 2, 3, 4, 5, 6, 7].map(
       (frame) =>
         new Promise((resolve, reject) => {
           loader.load(
@@ -516,7 +516,7 @@ function makeClickIndicator(textures) {
   const sprite = new THREE.Sprite(materials[0]);
   sprite.center.set(0.5, 0.5);
   sprite.scale.set(0.3, 0.3, 1);
-  sprite.renderOrder = 4;
+  sprite.renderOrder = 1200;
   sprite.visible = false;
   return { sprite, materials };
 }
@@ -532,7 +532,7 @@ function updateClickIndicator(indicator, data, animation, now) {
     return false;
   }
   indicator.sprite.visible = true;
-  indicator.sprite.material = indicator.materials[frame];
+  indicator.sprite.material = indicator.materials[frame + (animation.red ? 4 : 0)];
   indicator.sprite.position.set(
     animation.x + 0.5,
     heightAt(data, animation.x, animation.z) + 0.14,
@@ -616,6 +616,8 @@ export default function Landscape3D({
   rats = [],
   hitsplats = [],
   playerFighting = false,
+  attackClick = null,
+  onHover,
   onLoad,
   onTileClick,
   onTileContextMenu,
@@ -648,6 +650,7 @@ export default function Landscape3D({
     onDoorContextMenu,
     onRatClick,
     onRatContextMenu,
+    onHover,
   };
 
   useEffect(() => {
@@ -905,13 +908,39 @@ export default function Landscape3D({
           });
         };
 
+        let hoverKey = "";
+        const reportHover = (event) => {
+          const hit = pickHit(event);
+          let key = "";
+          let payload = null;
+          if (hit?.type === "rat" && !hit.rat.dead) {
+            key = `rat:${hit.rat.id}`;
+            payload = { type: "rat", rat: hit.rat };
+          } else if (hit?.type === "door") {
+            key = `door:${hit.door.index}`;
+            payload = { type: "door", door: hit.door };
+          }
+          if (key === hoverKey) return;
+          hoverKey = key;
+          handlersRef.current.onHover?.(payload);
+        };
+        const onPointerLeave = () => {
+          if (!hoverKey) return;
+          hoverKey = "";
+          handlersRef.current.onHover?.(null);
+        };
+
         const canvas = renderer.domElement;
         canvas.addEventListener("pointerdown", onPointerDown);
         canvas.addEventListener("pointerup", onPointerUp);
+        canvas.addEventListener("pointermove", reportHover);
+        canvas.addEventListener("pointerleave", onPointerLeave);
         canvas.addEventListener("contextmenu", onContextMenu);
         detachPointer = () => {
           canvas.removeEventListener("pointerdown", onPointerDown);
           canvas.removeEventListener("pointerup", onPointerUp);
+          canvas.removeEventListener("pointermove", reportHover);
+          canvas.removeEventListener("pointerleave", onPointerLeave);
           canvas.removeEventListener("contextmenu", onContextMenu);
         };
 
@@ -998,6 +1027,17 @@ export default function Landscape3D({
       host.replaceChildren();
     };
   }, [src]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !attackClick) return;
+    view.clickAnim = {
+      startedAt: performance.now(),
+      x: attackClick.x,
+      z: attackClick.z,
+      red: true,
+    };
+  }, [attackClick, ready]);
 
   useEffect(() => {
     const view = viewRef.current;

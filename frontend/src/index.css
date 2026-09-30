@@ -340,6 +340,11 @@ input {
   pointer-events: auto;
 }
 
+.rsc-item-options-label {
+  pointer-events: none;
+}
+
+.rsc-item-options-label span,
 .rsc-item-options button {
   padding: 0;
   border: 0;
@@ -353,6 +358,10 @@ input {
 
 .rsc-item-options button:hover {
   color: #ffffff;
+}
+
+.rsc-item-options-label span {
+  cursor: default;
 }
 
 .landscape-region {
