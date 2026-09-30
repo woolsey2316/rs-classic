@@ -86,6 +86,18 @@ export async function chopTree(sceneryId, playerX, playerY) {
   });
 }
 
+export async function toggleDoor(sceneryId, playerX, playerY, action) {
+  return api("/api/world/door/", {
+    method: "POST",
+    body: {
+      scenery_id: sceneryId,
+      player_x: playerX,
+      player_y: playerY,
+      action,
+    },
+  });
+}
+
 export async function fetchTreasureChestContents(sceneryId) {
   return api(`/api/world/treasure-chest/${sceneryId}/`);
 }

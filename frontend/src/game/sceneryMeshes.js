@@ -100,7 +100,8 @@ function styleFor(kind) {
   if (hay.includes("barrel")) return "barrel";
   if (hay.includes("sack")) return "sacks";
   if (hay.includes("cart")) return "cart";
-  if (hay.includes("door") || hay.includes("gate")) return "door";
+  if (hay.includes("gate")) return model.includes("open") ? "gate-open" : "gate-closed";
+  if (hay.includes("door")) return "door";
   if (hay.includes("railing") || hay.includes("fence")) return "railing";
   if (hay.includes("post") || hay.includes("pillar") || hay.includes("sign")) return "post";
   if (hay.includes("fire")) return "fire";
@@ -292,6 +293,18 @@ function makeStyle(kit, style, objectId) {
     case "door":
       return assemble(kit, [
         mesh(geos.box, mats.door, 0, 0.85, 0, 0.85, 1.7, 0.1),
+      ]);
+    case "gate-closed":
+      return assemble(kit, [
+        mesh(geos.box, mats.metal, 0.42, 0.75, 0.5, 0.08, 1.45, 1.85),
+        mesh(geos.box, mats.wood, -0.02, 0.75, -0.35, 0.1, 1.5, 0.1),
+        mesh(geos.box, mats.wood, -0.02, 0.75, 1.35, 0.1, 1.5, 0.1),
+      ]);
+    case "gate-open":
+      return assemble(kit, [
+        mesh(geos.box, mats.metal, -0.05, 0.75, -0.35, 0.9, 1.4, 0.08),
+        mesh(geos.box, mats.wood, -0.02, 0.75, -0.35, 0.1, 1.5, 0.1),
+        mesh(geos.box, mats.wood, -0.02, 0.75, 1.35, 0.1, 1.5, 0.1),
       ]);
     case "railing":
       return assemble(kit, [

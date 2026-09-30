@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dropItem, equipItem, fetchScenery, chopTree, fetchTreasureChestContents, takeFromTreasureChest, unequipItem } from "../api/client";
+import { dropItem, equipItem, fetchScenery, chopTree, fetchTreasureChestContents, takeFromTreasureChest, toggleDoor, unequipItem } from "../api/client";
 import ContextMenu from "../components/ContextMenu";
 import EquipmentPanel from "../components/EquipmentPanel";
 import InventoryPanel from "../components/InventoryPanel";
@@ -12,6 +12,7 @@ import {
   buildNavGrid,
   findLandscapePath,
   isAdjacentTile,
+  isNearScenery,
   isWalkable,
   nearestWalkable,
   regionGameBounds,
@@ -135,6 +136,7 @@ export default function GamePage() {
       const game = toGameCoords(land, tile.x, tile.z);
       setStatus(`Walking to (${game.x}, ${game.y})…`);
       walkLoop();
+      return true;
     },
     [land, nav, walkLoop],
   );
@@ -179,12 +181,16 @@ export default function GamePage() {
       setStatus("You can't reach that.");
       return;
     }
-    if (onArrive) {
-      pendingActionRef.current = onArrive;
-    } else {
-      pendingActionRef.current = null;
+    if (
+      posRef.current &&
+      goal.x === posRef.current.x &&
+      goal.z === posRef.current.z
+    ) {
+      if (onArrive) onArrive();
+      return;
     }
-    startWalk(goal);
+    pendingActionRef.current = onArrive || null;
+    if (!startWalk(goal)) pendingActionRef.current = null;
   }
 
   const tryChop = useCallback(
@@ -277,6 +283,56 @@ export default function GamePage() {
     setStatus(IDLE_STATUS);
   }
 
+  function applySceneryKind(update, kind) {
+    setScenery((prev) => {
+      if (!prev || !update) return prev;
+      const kinds = prev.kinds.some((entry) => entry.rsc_id === kind?.rsc_id)
+        ? prev.kinds
+        : kind
+          ? [...prev.kinds, kind]
+          : prev.kinds;
+      return {
+        ...prev,
+        kinds,
+        objects: prev.objects.map((obj) =>
+          obj.id === update.id ? { ...obj, kind: update.kind } : obj,
+        ),
+      };
+    });
+  }
+
+  const tryToggleDoor = useCallback(
+    async (placement, action) => {
+      if (!land || !placement?.object?.id || !posRef.current) return;
+      const game = toGameCoords(land, posRef.current.x, posRef.current.z);
+      setStatus(action === "open" ? "You open the gate…" : "You close the gate…");
+      try {
+        const result = await toggleDoor(placement.object.id, game.x, game.y, action);
+        applySceneryKind(result.scenery_update, result.kind);
+        setStatus(result.message);
+      } catch (err) {
+        setStatus(err.message);
+      }
+    },
+    [land],
+  );
+
+  function toggleDoorScenery(placement, action) {
+    if (!placement?.tile || !posRef.current) return;
+    if (
+      isNearScenery(
+        posRef.current,
+        placement.kind,
+        placement.tile,
+        placement.object?.direction,
+      )
+    ) {
+      tryToggleDoor(placement, action);
+      return;
+    }
+    walkToScenery(placement, () => tryToggleDoor(placement, action));
+  }
+
   function onSceneryClick(placement) {
     closeMenu();
     walkToScenery(placement);
@@ -363,6 +419,8 @@ export default function GamePage() {
           (command === "Search" || command.toLowerCase() === "open")
         ) {
           searchTreasureChest(payload.placement);
+        } else if (command.toLowerCase() === "open" || command.toLowerCase() === "close") {
+          toggleDoorScenery(payload.placement, command.toLowerCase());
         } else {
           setStatus("Nothing interesting happens.");
         }

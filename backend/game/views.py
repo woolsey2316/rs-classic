@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Equipment, GroundItem, InventorySlot, Item, Player, Scenery, SceneryKind
 from .serializers import (
     ChopSerializer,
+    DoorSerializer,
     EquipSerializer,
     GroundItemSerializer,
     ItemSerializer,
@@ -17,6 +18,7 @@ from .serializers import (
     TreasureChestTakeSerializer,
     UnequipSerializer,
 )
+from .doors import toggle_door
 from .treasure_chest import take_from_treasure_chest
 from .woodcutting import attempt_chop
 
@@ -258,6 +260,29 @@ class ChopView(APIView):
         if result.get("scenery_update"):
             payload["scenery_update"] = result["scenery_update"]
         return Response(payload)
+
+
+class DoorView(APIView):
+    """Open or close a gate or door so the tiles it covers can be walked."""
+
+    def post(self, request):
+        serializer = DoorSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = toggle_door(
+            serializer.validated_data["scenery_id"],
+            serializer.validated_data["player_x"],
+            serializer.validated_data["player_y"],
+            opening=serializer.validated_data["action"] == "open",
+        )
+        if not result.get("ok"):
+            return Response({"detail": result["message"]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "message": result["message"],
+                "scenery_update": result["scenery_update"],
+                "kind": SceneryKindSerializer(result["kind"]).data,
+            }
+        )
 
 
 class TreasureChestContentsView(APIView):

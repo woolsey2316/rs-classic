@@ -76,6 +76,43 @@ function pushQuad(bucket, a, b, c, d, uSpan, vSpan) {
   bucket.indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
 }
 
+function pushQuadUV(bucket, corners) {
+  const v = bucket.positions.length / 3;
+  for (const [point, u, t] of corners) {
+    bucket.positions.push(...point);
+    bucket.uvs.push(u, t);
+  }
+  bucket.indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+}
+
+function pushTri(bucket, corners) {
+  const v = bucket.positions.length / 3;
+  for (const [point, u, t] of corners) {
+    bucket.positions.push(...point);
+    bucket.uvs.push(u, t);
+  }
+  bucket.indices.push(v, v + 1, v + 2);
+}
+
+function indexWalls(walls) {
+  const vertical = new Set();
+  const horizontal = new Set();
+  const diagonal = new Map();
+  for (const [x1, z1, x2, z2] of walls || []) {
+    if (x1 === x2) {
+      vertical.add(`${x1},${Math.min(z1, z2)}`);
+    } else if (z1 === z2) {
+      horizontal.add(`${Math.min(x1, x2)},${z1}`);
+    } else {
+      const ox = Math.min(x1, x2);
+      const oz = Math.min(z1, z2);
+      const direction = (x2 - x1) * (z2 - z1) < 0 ? "/" : "\\";
+      diagonal.set(`${ox},${oz}`, direction);
+    }
+  }
+  return { vertical, horizontal, diagonal };
+}
+
 function meshesFromGroups(groups) {
   const meshes = [];
   for (const bucket of groups.values()) {
@@ -130,9 +167,16 @@ export function buildWallMeshes(data, defs, textures) {
   return meshesFromGroups(groups);
 }
 
+const FLOOR_WALL_INSET = 0.1;
+
+function isFloorOverlay(defs, overlay) {
+  return defs?.tileKinds?.[overlay]?.type === "floor";
+}
+
 export function buildFloorMeshes(data, defs, textures) {
   const groups = new Map();
   const { width, depth } = data;
+  const walls = indexWalls(data.walls);
   for (let z = 0; z < depth; z += 1) {
     for (let x = 0; x < width; x += 1) {
       const tileIndex = z * width + x;
@@ -143,15 +187,75 @@ export function buildFloorMeshes(data, defs, textures) {
       if (!texture) continue;
       const bucket = groupBucket(groups, `floor:${kind.texture}`, { texture, colour: 0xffffff });
       const y = data.heights[tileIndex] * data.heightScale + 0.03;
-      pushQuad(
-        bucket,
-        [x, y, z],
-        [x + 1, y, z],
-        [x, y, z + 1],
-        [x + 1, y, z + 1],
-        1,
-        1,
-      );
+
+      const continues = (nx, nz) =>
+        nx >= 0 &&
+        nz >= 0 &&
+        nx < width &&
+        nz < depth &&
+        isFloorOverlay(defs, data.overlays[nz * width + nx]);
+      const north = continues(x, z - 1);
+      const east = continues(x + 1, z);
+      const south = continues(x, z + 1);
+      const west = continues(x - 1, z);
+      const diagonal = walls.diagonal.get(`${x},${z}`);
+
+      const point = (px, pz, u, v) => [[px, y, pz], u, v];
+      const nw = point(x, z, 0, 0);
+      const ne = point(x + 1, z, 1, 0);
+      const sw = point(x, z + 1, 0, 1);
+      const se = point(x + 1, z + 1, 1, 1);
+
+      if (diagonal) {
+        let corners = null;
+        if (!south && !west) corners = [nw, ne, se];
+        else if (!north && !east) corners = [nw, sw, se];
+        else if (!south && !east) corners = [nw, ne, sw];
+        else if (!north && !west) corners = [ne, sw, se];
+        else if (diagonal === "\\") {
+          const towardNorthEast = (north ? 1 : 0) + (east ? 1 : 0);
+          const towardSouthWest = (south ? 1 : 0) + (west ? 1 : 0);
+          if (towardNorthEast === towardSouthWest) {
+            pushQuadUV(bucket, [nw, ne, sw, se]);
+          } else {
+            pushTri(
+              bucket,
+              towardNorthEast > towardSouthWest ? [nw, ne, se] : [nw, sw, se],
+            );
+          }
+          continue;
+        } else {
+          const towardNorthWest = (north ? 1 : 0) + (west ? 1 : 0);
+          const towardSouthEast = (south ? 1 : 0) + (east ? 1 : 0);
+          if (towardNorthWest === towardSouthEast) {
+            pushQuadUV(bucket, [nw, ne, sw, se]);
+          } else {
+            pushTri(
+              bucket,
+              towardNorthWest > towardSouthEast ? [nw, ne, sw] : [ne, sw, se],
+            );
+          }
+          continue;
+        }
+        pushTri(bucket, corners);
+        continue;
+      }
+
+      let x0 = x;
+      let x1 = x + 1;
+      let z0 = z;
+      let z1 = z + 1;
+      if (walls.vertical.has(`${x},${z}`)) x0 += FLOOR_WALL_INSET;
+      if (walls.vertical.has(`${x + 1},${z}`)) x1 -= FLOOR_WALL_INSET;
+      if (walls.horizontal.has(`${x},${z}`)) z0 += FLOOR_WALL_INSET;
+      if (walls.horizontal.has(`${x},${z + 1}`)) z1 -= FLOOR_WALL_INSET;
+      if (x1 - x0 < 0.2 || z1 - z0 < 0.2) continue;
+      pushQuadUV(bucket, [
+        point(x0, z0, x0 - x, z0 - z),
+        point(x1, z0, x1 - x, z0 - z),
+        point(x0, z1, x0 - x, z1 - z),
+        point(x1, z1, x1 - x, z1 - z),
+      ]);
     }
   }
   return meshesFromGroups(groups);

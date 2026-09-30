@@ -167,6 +167,13 @@ class ChopSerializer(serializers.Serializer):
     player_y = serializers.IntegerField()
 
 
+class DoorSerializer(serializers.Serializer):
+    scenery_id = serializers.IntegerField(min_value=1)
+    player_x = serializers.IntegerField()
+    player_y = serializers.IntegerField()
+    action = serializers.ChoiceField(choices=("open", "close"))
+
+
 class TreasureChestTakeSerializer(serializers.Serializer):
     scenery_id = serializers.IntegerField(min_value=1)
     item_key = serializers.SlugField(max_length=64)

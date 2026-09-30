@@ -222,7 +222,38 @@ export function sceneryOccupies(kind, direction) {
 }
 
 export function sceneryBlocksTile(kind) {
+  const model = (kind?.model || "").toLowerCase();
+  if (
+    kind?.type === "open-door" ||
+    model.includes("gateopen") ||
+    model.includes("doorsopen") ||
+    /dooropen/.test(model)
+  ) {
+    return false;
+  }
   return kind?.type === "blocked" || kind?.type === "closed-door";
+}
+
+/** Local tiles a scenery object occupies, origin first. */
+export function sceneryTiles(kind, origin, direction) {
+  if (!origin) return [];
+  const { width, height } = sceneryOccupies(kind, direction);
+  const tiles = [];
+  for (let dx = 0; dx < width; dx += 1) {
+    for (let dz = 0; dz < height; dz += 1) {
+      tiles.push({ x: origin.x + dx, z: origin.z + dz });
+    }
+  }
+  return tiles;
+}
+
+/** True when `pos` is on or next to any tile the scenery occupies. */
+export function isNearScenery(pos, kind, origin, direction) {
+  if (!pos) return false;
+  return sceneryTiles(kind, origin, direction).some(
+    (tile) =>
+      (pos.x === tile.x && pos.z === tile.z) || isAdjacentTile(pos, tile),
+  );
 }
 
 /** Copy a nav grid and mark tiles occupied by blocking scenery. */
