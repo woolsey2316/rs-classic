@@ -18,10 +18,12 @@ import {
   regionGameBounds,
   tileInfo,
   toGameCoords,
+  fromGameCoords,
 } from "../game/landscapeGrid";
 import { examineItem } from "../game/worldInfo";
 import { equippedItemIds } from "../game/playerSprite";
-import { onTick } from "../game/tick";
+import { RAT_EXAMINE, RAT_HOME, spawnRats, stepRat } from "../game/rats";
+import { TICK_MS, onTick } from "../game/tick";
 import { useAuth } from "../hooks/useAuth";
 
 const IDLE_STATUS = "Click the ground to walk. Right-click for options.";
@@ -40,6 +42,7 @@ export default function GamePage() {
   const [scenery, setScenery] = useState(null);
   const [wallKinds, setWallKinds] = useState(null);
   const [openDoors, setOpenDoors] = useState([]);
+  const [rats, setRats] = useState([]);
   const [pos, setPos] = useState(null);
   const [facing, setFacing] = useState({ x: 0, z: 1 });
   const [destination, setDestination] = useState(null);
@@ -67,9 +70,29 @@ export default function GamePage() {
     posRef.current = pos;
   }, [pos]);
 
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  const ratHomeRef = useRef(null);
+
   const onLandscapeLoad = useCallback((data) => {
     setLand(data);
   }, []);
+
+  useEffect(() => {
+    if (!land || !navRef.current) return undefined;
+    const home = fromGameCoords(land, RAT_HOME.x, RAT_HOME.y);
+    if (!home) return undefined;
+    const spot = nearestWalkable(navRef.current, home, 6) || home;
+    ratHomeRef.current = spot;
+    setRats(spawnRats(navRef.current, spot));
+    const timer = setInterval(() => {
+      const grid = navRef.current;
+      const origin = ratHomeRef.current;
+      if (!grid || !origin) return;
+      setRats((prev) => prev.map((rat) => stepRat(rat, grid, origin)));
+    }, TICK_MS);
+    return () => clearInterval(timer);
+  }, [land]);
 
   useEffect(() => {
     let cancelled = false;
@@ -428,6 +451,31 @@ export default function GamePage() {
     walkToScenery(placement);
   }
 
+  function onRatClick(rat) {
+    closeMenu();
+    if (!nav || !rat) return;
+    const tile = nearestWalkable(nav, { x: rat.x, z: rat.z }, 2);
+    if (tile) startWalk(tile);
+  }
+
+  function onRatContextMenu(hit) {
+    if (!hit?.rat) {
+      closeMenu();
+      return;
+    }
+    setMenu({
+      x: hit.screen.x,
+      y: hit.screen.y,
+      title: "Rat",
+      items: [
+        { id: "attack", label: "Attack Rat" },
+        { id: "examine", label: "Examine Rat" },
+        { id: "cancel", label: "Cancel" },
+      ],
+      payload: { type: "rat", rat: hit.rat },
+    });
+  }
+
   function onDoorClick(door) {
     closeMenu();
     toggleDoorway(door);
@@ -530,6 +578,15 @@ export default function GamePage() {
       return;
     }
 
+    if (payload.type === "rat") {
+      if (actionId === "attack") {
+        setStatus("You aren't ready to fight the rat.");
+      } else if (actionId === "examine") {
+        setStatus(RAT_EXAMINE);
+      }
+      return;
+    }
+
     if (payload.type === "door") {
       if (actionId === "toggle-door") toggleDoorway(payload.door);
       else if (actionId === "examine") setStatus(payload.door.description || "A wooden door.");
@@ -610,6 +667,7 @@ export default function GamePage() {
         scenery={scenery}
         openDoors={openDoorSet}
         equipmentIds={equippedItemIds(player.equipment)}
+        rats={rats}
         onLoad={onLandscapeLoad}
         onTileClick={onTileClick}
         onTileContextMenu={onTileContextMenu}
@@ -617,6 +675,8 @@ export default function GamePage() {
         onSceneryContextMenu={onSceneryContextMenu}
         onDoorClick={onDoorClick}
         onDoorContextMenu={onDoorContextMenu}
+        onRatClick={onRatClick}
+        onRatContextMenu={onRatContextMenu}
       />
 
       <div className="landscape-hud">

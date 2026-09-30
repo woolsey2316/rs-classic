@@ -127,7 +127,7 @@ function spriteMaterial(texture) {
   return new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
-    depthTest: true,
+    depthTest: false,
     depthWrite: false,
   });
 }
@@ -159,7 +159,8 @@ function makePlayerMarker(textures) {
     PLAYER_HEIGHT,
     1,
   );
-  sprite.renderOrder = 3;
+  sprite.renderOrder = 1000;
+  group.renderOrder = 1000;
 
   group.add(sprite);
   group.userData = { sprite, materials, extraTextures, viewKey: "" };
@@ -217,6 +218,124 @@ function updatePlayerSprite(player, camera) {
   if (player.userData.viewKey === key) return;
   player.userData.viewKey = key;
   sprite.material = materials[view.flip ? `${view.angle}-flip` : view.angle];
+}
+
+const RAT_HEIGHT = 0.55;
+const RAT_FRAMES = 18;
+
+function ratFrame(facing, cameraOffset, moving, step) {
+  const view = spriteViewFromCamera(facing, cameraOffset);
+  const frame = view.octant * 2 + (moving && step % 2 ? 1 : 0);
+  return frame % RAT_FRAMES;
+}
+
+function loadRatTextures() {
+  const loader = new THREE.TextureLoader();
+  return Promise.all(
+    Array.from({ length: RAT_FRAMES }, (_, frame) =>
+      new Promise((resolve) => {
+        loader.load(
+          `/sprites/rsc/entity/rat/${frame}.png`,
+          (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            resolve(texture);
+          },
+          undefined,
+          () => resolve(null),
+        );
+      }),
+    ),
+  );
+}
+
+function updateRats(view, rats, now) {
+  const group = view.ratsGroup;
+  if (!group || !view.ratTextures) return;
+  const motions = view.ratMotions || (view.ratMotions = new Map());
+  const seen = new Set();
+  for (const rat of rats || []) {
+    seen.add(rat.id);
+    let sprite = group.getObjectByName(`rat-${rat.id}`);
+    if (!sprite) {
+      const material = spriteMaterial(view.ratTextures[0] || view.ratTextures.find(Boolean));
+      if (!material) continue;
+      sprite = new THREE.Sprite(material);
+      sprite.name = `rat-${rat.id}`;
+      sprite.center.set(0.5, 0);
+      sprite.scale.set(RAT_HEIGHT * 1.15, RAT_HEIGHT, 1);
+      sprite.renderOrder = 900;
+      sprite.userData.ratId = rat.id;
+      group.add(sprite);
+      motions.set(rat.id, {
+        display: new THREE.Vector3(rat.x + 0.5, 0, rat.z + 0.5),
+        from: null,
+        goal: { x: rat.x, z: rat.z },
+        startedAt: null,
+      });
+    }
+    const motion = motions.get(rat.id);
+    const y = heightAt(view.data, rat.x, rat.z);
+    if (motion.goal.x !== rat.x || motion.goal.z !== rat.z) {
+      motion.from = motion.display.clone();
+      motion.goal = { x: rat.x, z: rat.z };
+      motion.startedAt = now;
+    }
+    let shown = motion.display;
+    if (motion.from && motion.startedAt != null) {
+      const t = smoothStep((now - motion.startedAt) / TICK_MS);
+      shown = motion.display.lerpVectors(
+        motion.from,
+        new THREE.Vector3(motion.goal.x + 0.5, y, motion.goal.z + 0.5),
+        t,
+      );
+      if (t >= 1) motion.from = null;
+    } else {
+      shown.set(rat.x + 0.5, y, rat.z + 0.5);
+    }
+    sprite.position.copy(shown);
+    sprite.userData.rat = rat;
+    const frame = ratFrame(
+      rat.facing,
+      {
+        x: view.camera.position.x - shown.x,
+        z: view.camera.position.z - shown.z,
+      },
+      rat.moving,
+      rat.step,
+    );
+    const texture = view.ratTextures[frame];
+    if (texture && sprite.material.map !== texture) {
+      sprite.material.map = texture;
+      sprite.material.needsUpdate = true;
+    }
+  }
+  for (const child of [...group.children]) {
+    if (!seen.has(child.userData.ratId)) group.remove(child);
+  }
+}
+
+function ratUnderPointer(ratsGroup, camera, rect, event) {
+  if (!ratsGroup) return null;
+  const point = new THREE.Vector3();
+  let closest = null;
+  let closestDist = 36;
+  for (const sprite of ratsGroup.children) {
+    if (!sprite.userData?.rat) continue;
+    point.copy(sprite.position);
+    point.y += RAT_HEIGHT * 0.55;
+    point.project(camera);
+    if (point.z < -1 || point.z > 1) continue;
+    const sx = (point.x * 0.5 + 0.5) * rect.width + rect.left;
+    const sy = (-point.y * 0.5 + 0.5) * rect.height + rect.top;
+    const dist = Math.hypot(sx - event.clientX, sy - event.clientY);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closest = sprite.userData.rat;
+    }
+  }
+  return closest;
 }
 
 function loadClickIconTextures() {
@@ -349,6 +468,7 @@ export default function Landscape3D({
   scenery = null,
   openDoors = null,
   equipmentIds = [],
+  rats = [],
   onLoad,
   onTileClick,
   onTileContextMenu,
@@ -356,10 +476,14 @@ export default function Landscape3D({
   onSceneryContextMenu,
   onDoorClick,
   onDoorContextMenu,
+  onRatClick,
+  onRatContextMenu,
 }) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const handlersRef = useRef({});
+  const ratsRef = useRef(rats);
+  ratsRef.current = rats;
   const [message, setMessage] = useState("Loading RSC landscape…");
   const [ready, setReady] = useState(0);
 
@@ -371,6 +495,8 @@ export default function Landscape3D({
     onSceneryContextMenu,
     onDoorClick,
     onDoorContextMenu,
+    onRatClick,
+    onRatContextMenu,
   };
 
   useEffect(() => {
@@ -436,13 +562,15 @@ export default function Landscape3D({
 
         const playerTexturesPromise = loadPlayerTextures();
         const clickIconTexturesPromise = loadClickIconTextures();
+        const ratTexturesPromise = loadRatTextures();
         const rscTexturesPromise = defs
           ? loadRscTextures(collectTextureIds(data, defs))
           : Promise.resolve(new Map());
-        const [playerTextures, clickIconTextures, rscTextures] = await Promise.all([
+        const [playerTextures, clickIconTextures, rscTextures, ratTextures] = await Promise.all([
           playerTexturesPromise,
           clickIconTexturesPromise,
           rscTexturesPromise,
+          ratTexturesPromise,
         ]);
         if (disposed) return;
 
@@ -478,6 +606,9 @@ export default function Landscape3D({
         const doorsGroup = new THREE.Group();
         doorsGroup.name = "doors";
         scene.add(doorsGroup);
+        const ratsGroup = new THREE.Group();
+        ratsGroup.name = "rats";
+        scene.add(ratsGroup);
         const sceneryKit = createSceneryKit();
         resources.push({ dispose: () => sceneryKit.dispose() });
 
@@ -509,6 +640,9 @@ export default function Landscape3D({
           pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
           raycaster.setFromCamera(pointer, camera);
           const screen = { x: event.clientX, y: event.clientY };
+
+          const rat = ratUnderPointer(ratsGroup, camera, rect, event);
+          if (rat) return { type: "rat", rat, screen };
 
           const sceneryHit = raycaster.intersectObject(sceneryGroup, true)[0];
           const doorHit = raycaster.intersectObject(doorsGroup, true)[0];
@@ -558,6 +692,10 @@ export default function Landscape3D({
           if (dragged) return;
           const hit = pickHit(event);
           if (!hit) return;
+          if (hit.type === "rat") {
+            handlersRef.current.onRatClick?.(hit.rat);
+            return;
+          }
           if (hit.type === "door") {
             handlersRef.current.onDoorClick?.(hit.door);
             return;
@@ -581,6 +719,13 @@ export default function Landscape3D({
           const hit = pickHit(event);
           if (!hit) {
             handlersRef.current.onTileContextMenu?.(null);
+            return;
+          }
+          if (hit.type === "rat") {
+            handlersRef.current.onRatContextMenu?.({
+              rat: hit.rat,
+              screen: hit.screen,
+            });
             return;
           }
           if (hit.type === "door") {
@@ -636,6 +781,8 @@ export default function Landscape3D({
           sceneryGroup,
           sceneryKit,
           doorsGroup,
+          ratsGroup,
+          ratTextures,
           defs,
           rscTextures,
           roofs: roofMeshes,
@@ -648,7 +795,10 @@ export default function Landscape3D({
         const render = () => {
           if (disposed) return;
           const view = viewRef.current;
-          if (view) updatePlayerMotion(view, performance.now());
+          if (view) {
+            updatePlayerMotion(view, performance.now());
+            updateRats(view, ratsRef.current, performance.now());
+          }
           controls.update();
           if (player.visible) updatePlayerSprite(player, camera);
           if (view?.clickIndicator) {
