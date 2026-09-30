@@ -192,16 +192,26 @@ function levelWallTops(data, defs) {
 
   const tops = new Map();
   const atPoint = new Map();
+  const vertical = new Map();
+  const horizontal = new Map();
   walls.forEach((wall, index) => {
     const kind = defs?.wallKinds?.[wall[5]];
     if (!isSolidWall(kind)) return;
     const top = maxTop.get(find(index));
     tops.set(index, top);
-    for (const end of [`${wall[0]},${wall[1]}`, `${wall[2]},${wall[3]}`]) {
+    const [x1, z1, x2, z2] = wall;
+    for (const end of [`${x1},${z1}`, `${x2},${z2}`]) {
       atPoint.set(end, Math.max(atPoint.get(end) ?? 0, top));
     }
+    if (x1 === x2) {
+      const key = `${x1},${Math.min(z1, z2)}`;
+      vertical.set(key, Math.max(vertical.get(key) ?? 0, top));
+    } else if (z1 === z2) {
+      const key = `${Math.min(x1, x2)},${z1}`;
+      horizontal.set(key, Math.max(horizontal.get(key) ?? 0, top));
+    }
   });
-  return { tops, atPoint };
+  return { tops, atPoint, vertical, horizontal };
 }
 
 function pushWallQuad(bucket, x1, z1, x2, z2, baseY, topY) {
@@ -373,33 +383,128 @@ export function buildRoofMeshes(data, defs, textures, heightAt) {
   if (!data.roofs?.length) return [];
   const groups = new Map();
   const { width, depth } = data;
+  const wallIndex = indexWalls(data.walls);
+  const { vertical: wallTopsV, horizontal: wallTopsH } = levelWallTops(data, defs);
+  const tiles = [];
+  const at = new Map();
+
+  const edgeTop = (x, z) => {
+    const values = [
+      wallTopsV.get(`${x},${z}`),
+      wallTopsV.get(`${x + 1},${z}`),
+      wallTopsH.get(`${x},${z}`),
+      wallTopsH.get(`${x},${z + 1}`),
+    ].filter((value) => value != null);
+    return values.length ? Math.max(...values) : null;
+  };
+
   for (let z = 0; z < depth; z += 1) {
     for (let x = 0; x < width; x += 1) {
       const roofId = data.roofs[z * width + x];
       const kind = defs?.roofKinds?.[roofId];
       if (!kind || kind.texture == null) continue;
-      const texture = textures.get(kind.texture);
-      if (!texture) continue;
-      const bucket = groupBucket(groups, `roof:${kind.texture}`, { texture, colour: 0xffffff });
-      const top =
+      if (!textures.get(kind.texture)) continue;
+      const fallback =
         Math.max(
           heightAt(data, x, z),
           heightAt(data, x + 1, z),
           heightAt(data, x, z + 1),
           heightAt(data, x + 1, z + 1),
-        ) +
-        1.8 +
-        ((kind.height || 64) / 192) * 0.2;
-      pushQuad(
-        bucket,
-        [x, top, z],
-        [x + 1, top, z],
-        [x, top, z + 1],
-        [x + 1, top, z + 1],
-        1,
-        1,
-      );
+        ) + 1.8;
+      const index = tiles.length;
+      tiles.push({ x, z, texture: kind.texture, ownTop: edgeTop(x, z) ?? fallback });
+      at.set(`${x},${z}`, index);
     }
+  }
+
+  const parent = tiles.map((_, index) => index);
+  const find = (index) => {
+    let cursor = index;
+    while (parent[cursor] !== cursor) {
+      parent[cursor] = parent[parent[cursor]];
+      cursor = parent[cursor];
+    }
+    return cursor;
+  };
+  const union = (a, b) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  for (const tile of tiles) {
+    const here = at.get(`${tile.x},${tile.z}`);
+    for (const [dx, dz] of [[1, 0], [0, 1]]) {
+      const next = at.get(`${tile.x + dx},${tile.z + dz}`);
+      if (next == null || tiles[next].texture !== tile.texture) continue;
+      union(here, next);
+    }
+  }
+
+  const flatTop = new Map();
+  tiles.forEach((tile, index) => {
+    const root = find(index);
+    flatTop.set(root, Math.max(flatTop.get(root) ?? 0, tile.ownTop));
+  });
+
+  for (const tile of tiles) {
+    const texture = textures.get(tile.texture);
+    const bucket = groupBucket(groups, `roof:${tile.texture}`, { texture, colour: 0xffffff });
+    const y = flatTop.get(find(at.get(`${tile.x},${tile.z}`))) + 0.02;
+    const { x, z } = tile;
+    const hasRoof = (nx, nz) => {
+      const next = at.get(`${nx},${nz}`);
+      return next != null && tiles[next].texture === tile.texture;
+    };
+    const north = hasRoof(x, z - 1);
+    const east = hasRoof(x + 1, z);
+    const south = hasRoof(x, z + 1);
+    const west = hasRoof(x - 1, z);
+    const diagonal = wallIndex.diagonal.get(`${x},${z}`);
+    const point = (px, pz, u, v) => [[px, y, pz], u, v];
+    const nw = point(x, z, 0, 0);
+    const ne = point(x + 1, z, 1, 0);
+    const sw = point(x, z + 1, 0, 1);
+    const se = point(x + 1, z + 1, 1, 1);
+
+    if (diagonal) {
+      let corners = null;
+      if (!south && !west) corners = [nw, ne, se];
+      else if (!north && !east) corners = [nw, sw, se];
+      else if (!south && !east) corners = [nw, ne, sw];
+      else if (!north && !west) corners = [ne, sw, se];
+      else if (diagonal === "\\") {
+        const towardNorthEast = (north ? 1 : 0) + (east ? 1 : 0);
+        const towardSouthWest = (south ? 1 : 0) + (west ? 1 : 0);
+        if (towardNorthEast === towardSouthWest) pushQuadUV(bucket, [nw, ne, sw, se]);
+        else pushTri(bucket, towardNorthEast > towardSouthWest ? [nw, ne, se] : [nw, sw, se]);
+        continue;
+      } else {
+        const towardNorthWest = (north ? 1 : 0) + (west ? 1 : 0);
+        const towardSouthEast = (south ? 1 : 0) + (east ? 1 : 0);
+        if (towardNorthWest === towardSouthEast) pushQuadUV(bucket, [nw, ne, sw, se]);
+        else pushTri(bucket, towardNorthWest > towardSouthEast ? [nw, ne, sw] : [ne, sw, se]);
+        continue;
+      }
+      pushTri(bucket, corners);
+      continue;
+    }
+
+    let x0 = x;
+    let x1 = x + 1;
+    let z0 = z;
+    let z1 = z + 1;
+    if (wallIndex.vertical.has(`${x},${z}`)) x0 += FLOOR_WALL_INSET;
+    if (wallIndex.vertical.has(`${x + 1},${z}`)) x1 -= FLOOR_WALL_INSET;
+    if (wallIndex.horizontal.has(`${x},${z}`)) z0 += FLOOR_WALL_INSET;
+    if (wallIndex.horizontal.has(`${x},${z + 1}`)) z1 -= FLOOR_WALL_INSET;
+    if (x1 - x0 < 0.2 || z1 - z0 < 0.2) continue;
+    pushQuadUV(bucket, [
+      point(x0, z0, x0 - x, z0 - z),
+      point(x1, z0, x1 - x, z0 - z),
+      point(x0, z1, x0 - x, z1 - z),
+      point(x1, z1, x1 - x, z1 - z),
+    ]);
   }
   return meshesFromGroups(groups);
 }
