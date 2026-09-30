@@ -120,6 +120,11 @@ function addMeshes(scene, resources, meshes) {
 
 const PLAYER_HEIGHT = 1.35;
 
+const walkUniforms = {
+  uTime: { value: 0 },
+  uWalk: { value: 0 },
+};
+
 function spriteMaterial(texture) {
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
@@ -130,6 +135,37 @@ function spriteMaterial(texture) {
     depthTest: false,
     depthWrite: false,
   });
+}
+
+function playerSpriteMaterial(texture) {
+  const material = spriteMaterial(texture);
+  material.customProgramCacheKey = () => "player-walk";
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = walkUniforms.uTime;
+    shader.uniforms.uWalk = walkUniforms.uWalk;
+    shader.fragmentShader =
+      "uniform float uTime;\nuniform float uWalk;\n" +
+      shader.fragmentShader.replace(
+        "#include <map_fragment>",
+        `
+        #ifdef USE_MAP
+          vec2 walkUv = vMapUv;
+          float stride = sin(uTime * 11.0) * uWalk;
+          if (walkUv.y < 0.36) {
+            float leg = walkUv.x < 0.5 ? stride : -stride;
+            walkUv.y -= leg * 0.03;
+          } else if (walkUv.y < 0.74) {
+            float edge = 1.0 - smoothstep(0.05, 0.38, min(walkUv.x, 1.0 - walkUv.x));
+            float arm = walkUv.x < 0.5 ? stride : -stride;
+            walkUv.y += arm * 0.0275 * edge;
+          }
+          vec4 sampledDiffuseColor = texture2D(map, walkUv);
+          diffuseColor *= sampledDiffuseColor;
+        #endif
+        `,
+      );
+  };
+  return material;
 }
 
 function flippedTexture(texture) {
@@ -146,10 +182,10 @@ function makePlayerMarker(textures) {
   const materials = {};
   const extraTextures = [];
   for (const angle of PLAYER_SPRITE_ANGLES) {
-    materials[angle] = spriteMaterial(textures[angle]);
+    materials[angle] = playerSpriteMaterial(textures[angle]);
     const flipped = flippedTexture(textures[angle]);
     extraTextures.push(flipped);
-    materials[`${angle}-flip`] = spriteMaterial(flipped);
+    materials[`${angle}-flip`] = playerSpriteMaterial(flipped);
   }
 
   const sprite = new THREE.Sprite(materials[0]);
@@ -198,10 +234,10 @@ function applyPlayerTextures(player, textures) {
     materials[angle]?.dispose();
     materials[`${angle}-flip`]?.dispose();
     if (!textures[angle]) continue;
-    materials[angle] = spriteMaterial(textures[angle]);
+    materials[angle] = playerSpriteMaterial(textures[angle]);
     const flipped = flippedTexture(textures[angle]);
     extraTextures.push(flipped);
-    materials[`${angle}-flip`] = spriteMaterial(flipped);
+    materials[`${angle}-flip`] = playerSpriteMaterial(flipped);
   }
   player.userData.viewKey = "";
   if (materials[0]) sprite.material = materials[0];
@@ -432,6 +468,8 @@ function updatePlayerMotion(view, now) {
   player.visible = true;
   followPlayerWithCamera(view, shown);
   updateNearbyRoofs(view, shown.x, shown.z);
+  walkUniforms.uTime.value = now * 0.001;
+  walkUniforms.uWalk.value = motion.from ? 1 : 0;
 }
 
 const ROOF_HIDE_TILES = 1;
