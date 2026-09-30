@@ -13,7 +13,7 @@ export const BUTTON_WIDTH = 33;
 export const RSC_ACTION_TABS = {
   inventory: { buttonIndex: 5, hoverFrame: 0 },
   skills: { buttonIndex: 3, hoverFrame: 2 },
-  equipment: { buttonIndex: 2, hoverFrame: 3 },
+  equipment: { buttonIndex: 4, hoverFrame: 6 },
 };
 
 export function hoverFrameForTab(tab) {

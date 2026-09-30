@@ -507,21 +507,23 @@ export default function GamePage() {
       </div>
 
       <aside className="rsc-sidebar">
-        <RscActionBar tab={tab} onTabChange={setTab} />
+        <div className="rsc-menu" onMouseLeave={() => setTab(null)}>
+          <RscActionBar tab={tab} onTabChange={setTab} />
 
-        {tab === "skills" && (
-          <SkillsPanel skills={player.skills} totalLevel={player.total_level} />
-        )}
-        {tab === "inventory" && (
-          <InventoryPanel
-            inventory={player.inventory}
-            onEquip={onEquip}
-            onContextMenu={onInventoryContextMenu}
-          />
-        )}
-        {tab === "equipment" && (
-          <EquipmentPanel equipment={player.equipment} onUnequip={onUnequip} />
-        )}
+          {tab === "skills" && (
+            <SkillsPanel skills={player.skills} totalLevel={player.total_level} />
+          )}
+          {tab === "inventory" && (
+            <InventoryPanel
+              inventory={player.inventory}
+              onEquip={onEquip}
+              onContextMenu={onInventoryContextMenu}
+            />
+          )}
+          {tab === "equipment" && (
+            <EquipmentPanel equipment={player.equipment} onUnequip={onUnequip} />
+          )}
+        </div>
       </aside>
 
       {menu && (

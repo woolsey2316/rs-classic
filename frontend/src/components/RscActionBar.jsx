@@ -1,4 +1,3 @@
-import { useMemo, useState } from "react";
 import {
   BUTTON_WIDTH,
   hoverFrameForTab,
@@ -12,12 +11,7 @@ import {
 } from "../game/rscActionBar";
 
 export default function RscActionBar({ tab, onTabChange }) {
-  const [hoverTab, setHoverTab] = useState(null);
-
-  const hoverFrame = useMemo(() => {
-    const active = hoverTab || tab;
-    return active ? hoverFrameForTab(active) : null;
-  }, [hoverTab, tab]);
+  const hoverFrame = hoverFrameForTab(tab);
 
   return (
     <div className="rsc-action-bar" style={{ width: INV2_WIDTH, height: INV2_HEIGHT }}>
@@ -58,11 +52,9 @@ export default function RscActionBar({ tab, onTabChange }) {
               left: buttonIndex * BUTTON_WIDTH,
               width: BUTTON_WIDTH,
             }}
-            onMouseEnter={() => setHoverTab(id)}
-            onMouseLeave={() => setHoverTab(null)}
-            onFocus={() => setHoverTab(id)}
-            onBlur={() => setHoverTab(null)}
-            onClick={() => onTabChange?.(tab === id ? null : id)}
+            onMouseEnter={() => onTabChange?.(id)}
+            onFocus={() => onTabChange?.(id)}
+            onClick={() => onTabChange?.(id)}
           />
         ))}
       </div>

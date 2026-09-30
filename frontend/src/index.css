@@ -407,8 +407,16 @@ input {
 }
 
 .side-panels > *,
-.rsc-sidebar > * {
+.rsc-sidebar > *,
+.rsc-menu,
+.rsc-menu > * {
   pointer-events: auto;
+}
+
+.rsc-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .rsc-action-bar {
