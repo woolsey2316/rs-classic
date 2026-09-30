@@ -133,6 +133,7 @@ function meshesFromGroups(groups) {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = false;
     mesh.receiveShadow = true;
+    if (bucket.tiles) mesh.userData.roofTiles = bucket.tiles;
     meshes.push(mesh);
   }
   return meshes;
@@ -448,10 +449,16 @@ export function buildRoofMeshes(data, defs, textures, heightAt) {
   });
 
   for (const tile of tiles) {
-    const texture = textures.get(tile.texture);
-    const bucket = groupBucket(groups, `roof:${tile.texture}`, { texture, colour: 0xffffff });
-    const y = flatTop.get(find(at.get(`${tile.x},${tile.z}`))) + 0.02;
     const { x, z } = tile;
+    const texture = textures.get(tile.texture);
+    const root = find(at.get(`${x},${z}`));
+    const bucket = groupBucket(groups, `roof:${tile.texture}:${root}`, {
+      texture,
+      colour: 0xffffff,
+      tiles: [],
+    });
+    bucket.tiles.push({ x, z });
+    const y = flatTop.get(root) + 0.02;
     const hasRoof = (nx, nz) => {
       const next = at.get(`${nx},${nz}`);
       return next != null && tiles[next].texture === tile.texture;

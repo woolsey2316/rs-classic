@@ -288,6 +288,26 @@ function updatePlayerMotion(view, now) {
   player.position.copy(shown);
   player.visible = true;
   followPlayerWithCamera(view, shown);
+  updateNearbyRoofs(view, shown.x, shown.z);
+}
+
+const ROOF_HIDE_TILES = 1;
+
+function updateNearbyRoofs(view, x, z) {
+  const roofs = view.roofs;
+  if (!roofs?.length) return;
+  const tileX = Math.floor(x);
+  const tileZ = Math.floor(z);
+  if (view.roofFocusX === tileX && view.roofFocusZ === tileZ) return;
+  view.roofFocusX = tileX;
+  view.roofFocusZ = tileZ;
+  for (const mesh of roofs) {
+    const tiles = mesh.userData.roofTiles;
+    mesh.visible = !tiles?.some(
+      (tile) =>
+        Math.max(Math.abs(tile.x - tileX), Math.abs(tile.z - tileZ)) <= ROOF_HIDE_TILES,
+    );
+  }
 }
 
 /**
@@ -401,10 +421,12 @@ export default function Landscape3D({
         ]);
         if (disposed) return;
 
+        let roofMeshes = [];
         if (defs && rscTextures.size) {
           addMeshes(scene, resources, buildWallMeshes(data, defs, rscTextures));
           addMeshes(scene, resources, buildFloorMeshes(data, defs, rscTextures));
-          addMeshes(scene, resources, buildRoofMeshes(data, defs, rscTextures, heightAt));
+          roofMeshes = buildRoofMeshes(data, defs, rscTextures, heightAt);
+          addMeshes(scene, resources, roofMeshes);
           rscTextures.forEach((texture) => resources.push(texture));
         } else {
           const wallGeometry = buildWalls(data);
@@ -591,6 +613,7 @@ export default function Landscape3D({
           doorsGroup,
           defs,
           rscTextures,
+          roofs: roofMeshes,
         };
 
         setMessage("");
@@ -683,6 +706,9 @@ export default function Landscape3D({
     } else {
       player.visible = false;
       view.playerMotion = null;
+      view.roofFocusX = null;
+      view.roofFocusZ = null;
+      for (const mesh of view.roofs || []) mesh.visible = true;
     }
 
   }, [playerPos, playerFacing, destination, selectedTile, ready]);
