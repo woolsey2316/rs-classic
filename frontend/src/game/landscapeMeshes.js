@@ -148,6 +148,33 @@ export function isDoorWall(kind) {
   return name.includes("door");
 }
 
+function isFence(kind) {
+  return (kind?.name || "").toLowerCase().includes("fence");
+}
+
+/** Lowest ground corner of the squares that meet at this fence. */
+function squareLowPoint(data, wall) {
+  const [x1, z1, x2, z2] = wall;
+  const points = [];
+  if (x1 === x2) {
+    const z = Math.min(z1, z2);
+    points.push([x1 - 1, z], [x1, z], [x1 - 1, z + 1], [x1, z + 1], [x1 + 1, z], [x1 + 1, z + 1]);
+  } else if (z1 === z2) {
+    const x = Math.min(x1, x2);
+    points.push([x, z1 - 1], [x + 1, z1 - 1], [x, z1], [x + 1, z1], [x, z1 + 1], [x + 1, z1 + 1]);
+  } else {
+    const x = Math.min(x1, x2);
+    const z = Math.min(z1, z2);
+    points.push([x, z], [x + 1, z], [x, z + 1], [x + 1, z + 1]);
+  }
+  const height = (x, z) => {
+    const cx = Math.max(0, Math.min(data.width - 1, x));
+    const cz = Math.max(0, Math.min(data.depth - 1, z));
+    return data.heights[cz * data.width + cx] * data.heightScale;
+  };
+  return Math.min(...points.map(([x, z]) => height(x, z)));
+}
+
 /** Shared parapet height for connected wall segments, in world units. */
 function levelWallTops(data, defs) {
   const walls = data.walls || [];
@@ -244,7 +271,8 @@ export function buildWallMeshes(data, defs, textures) {
 
     const key = texture ? `tex:${kind.texture}` : `col:${colour}:${kind.height}`;
     const bucket = groupBucket(groups, key, { texture, colour });
-    const baseY = elevation * data.heightScale + 0.02;
+    const baseY =
+      (isFence(kind) ? squareLowPoint(data, wall) : elevation * data.heightScale) + 0.02;
     const ownTop = baseY + (kind.height || 192) * WALL_HEIGHT_UNIT;
     pushWallQuad(bucket, x1, z1, x2, z2, baseY, Math.max(ownTop, tops.get(index) ?? ownTop));
   });
