@@ -37,6 +37,8 @@ export default function GamePage() {
   const { player, setPlayer, logout } = useAuth();
   const [land, setLand] = useState(null);
   const [scenery, setScenery] = useState(null);
+  const [wallKinds, setWallKinds] = useState(null);
+  const [openDoors, setOpenDoors] = useState([]);
   const [pos, setPos] = useState(null);
   const [facing, setFacing] = useState({ x: 0, z: 1 });
   const [destination, setDestination] = useState(null);
@@ -48,8 +50,12 @@ export default function GamePage() {
   const walkingRef = useRef(false);
   const posRef = useRef(null);
   const pendingActionRef = useRef(null);
+  const openDoorSet = useMemo(() => new Set(openDoors), [openDoors]);
 
-  const baseNav = useMemo(() => (land ? buildNavGrid(land) : null), [land]);
+  const baseNav = useMemo(
+    () => (land ? buildNavGrid(land, { wallKinds, openDoors: openDoorSet }) : null),
+    [land, wallKinds, openDoorSet],
+  );
   const nav = useMemo(
     () => applySceneryBlocking(baseNav, land, scenery),
     [baseNav, land, scenery],
@@ -61,6 +67,19 @@ export default function GamePage() {
 
   const onLandscapeLoad = useCallback((data) => {
     setLand(data);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/landscape/defs.json")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((defs) => {
+        if (!cancelled) setWallKinds(defs?.wallKinds || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -193,6 +212,61 @@ export default function GamePage() {
     }
     pendingActionRef.current = onArrive || null;
     if (!startWalk(goal)) pendingActionRef.current = null;
+  }
+
+  function doorSides(wall) {
+    const [x1, z1, x2, z2] = wall;
+    if (x1 === x2) {
+      const z = Math.min(z1, z2);
+      return [
+        { x: x1 - 1, z },
+        { x: x1, z },
+      ];
+    }
+    if (z1 === z2) {
+      return [
+        { x: x1, z: z1 - 1 },
+        { x: x1, z: z1 },
+      ];
+    }
+    return [{ x: Math.min(x1, x2), z: Math.min(z1, z2) }];
+  }
+
+  function standingAtDoor(wall) {
+    const pos = posRef.current;
+    return Boolean(pos && doorSides(wall).some((tile) => tile.x === pos.x && tile.z === pos.z));
+  }
+
+  function walkToDoor(door, onArrive) {
+    if (!nav) return;
+    const sides = doorSides(door.wall)
+      .map((tile) => nearestWalkable(nav, tile, 2))
+      .filter(Boolean);
+    if (!sides.length) {
+      setStatus("You can't reach that door.");
+      return;
+    }
+    const here = posRef.current;
+    sides.sort((a, b) => {
+      const da = here ? Math.abs(a.x - here.x) + Math.abs(a.z - here.z) : 0;
+      const db = here ? Math.abs(b.x - here.x) + Math.abs(b.z - here.z) : 0;
+      return da - db;
+    });
+    walkToScenery({ tile: sides[0] }, onArrive);
+  }
+
+  function toggleDoorway(door) {
+    const open = () => {
+      setOpenDoors((prev) =>
+        prev.includes(door.index) ? prev.filter((id) => id !== door.index) : [...prev, door.index],
+      );
+      setStatus(openDoorSet.has(door.index) ? "You close the door." : "You open the door.");
+    };
+    if (standingAtDoor(door.wall)) {
+      onTick(open);
+      return;
+    }
+    walkToDoor(door, () => onTick(open));
   }
 
   const tryChop = useCallback(
@@ -341,6 +415,30 @@ export default function GamePage() {
     walkToScenery(placement);
   }
 
+  function onDoorClick(door) {
+    closeMenu();
+    toggleDoorway(door);
+  }
+
+  function onDoorContextMenu(hit) {
+    if (!hit?.door) {
+      closeMenu();
+      return;
+    }
+    const open = openDoorSet.has(hit.door.index);
+    setMenu({
+      x: hit.screen.x,
+      y: hit.screen.y,
+      title: hit.door.name || "Door",
+      items: [
+        { id: "toggle-door", label: open ? "Close Door" : "Open Door" },
+        { id: "examine", label: "Examine" },
+        { id: "cancel", label: "Cancel" },
+      ],
+      payload: { type: "door", door: hit.door },
+    });
+  }
+
   function onSceneryContextMenu(hit) {
     if (!hit?.placement) {
       closeMenu();
@@ -405,6 +503,12 @@ export default function GamePage() {
       } else if (actionId === "examine") {
         setStatus(payload.info.examine);
       }
+      return;
+    }
+
+    if (payload.type === "door") {
+      if (actionId === "toggle-door") toggleDoorway(payload.door);
+      else if (actionId === "examine") setStatus(payload.door.description || "A wooden door.");
       return;
     }
 
@@ -491,11 +595,14 @@ export default function GamePage() {
               : null
         }
         scenery={scenery}
+        openDoors={openDoorSet}
         onLoad={onLandscapeLoad}
         onTileClick={onTileClick}
         onTileContextMenu={onTileContextMenu}
         onSceneryClick={onSceneryClick}
         onSceneryContextMenu={onSceneryContextMenu}
+        onDoorClick={onDoorClick}
+        onDoorContextMenu={onDoorContextMenu}
       />
 
       <div className="landscape-hud">

@@ -138,33 +138,141 @@ function meshesFromGroups(groups) {
   return meshes;
 }
 
+function isSolidWall(kind) {
+  return Boolean(kind && kind.name === "Wall" && kind.blocked !== false && !kind.invisible);
+}
+
+export function isDoorWall(kind) {
+  const name = (kind?.name || "").toLowerCase();
+  return name.includes("door");
+}
+
+/** Shared parapet height for connected wall segments, in world units. */
+function levelWallTops(data, defs) {
+  const walls = data.walls || [];
+  const parent = walls.map((_, index) => index);
+  const find = (index) => {
+    let cursor = index;
+    while (parent[cursor] !== cursor) {
+      parent[cursor] = parent[parent[cursor]];
+      cursor = parent[cursor];
+    }
+    return cursor;
+  };
+  const union = (a, b) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  const endpoint = new Map();
+  walls.forEach((wall, index) => {
+    const kind = defs?.wallKinds?.[wall[5]];
+    if (!isSolidWall(kind)) return;
+    const textureKey = kind.texture ?? kind.colour ?? kind.name;
+    for (const end of [`${wall[0]},${wall[1]}`, `${wall[2]},${wall[3]}`]) {
+      const key = `${textureKey}:${end}`;
+      if (endpoint.has(key)) union(index, endpoint.get(key));
+      else endpoint.set(key, index);
+    }
+  });
+
+  const maxTop = new Map();
+  const ownTop = (wall, kind) =>
+    wall[4] * data.heightScale +
+    0.02 +
+    (kind.height || 192) * WALL_HEIGHT_UNIT;
+  walls.forEach((wall, index) => {
+    const kind = defs?.wallKinds?.[wall[5]];
+    if (!isSolidWall(kind)) return;
+    const root = find(index);
+    const top = ownTop(wall, kind);
+    maxTop.set(root, Math.max(maxTop.get(root) ?? 0, top));
+  });
+
+  const tops = new Map();
+  const atPoint = new Map();
+  walls.forEach((wall, index) => {
+    const kind = defs?.wallKinds?.[wall[5]];
+    if (!isSolidWall(kind)) return;
+    const top = maxTop.get(find(index));
+    tops.set(index, top);
+    for (const end of [`${wall[0]},${wall[1]}`, `${wall[2]},${wall[3]}`]) {
+      atPoint.set(end, Math.max(atPoint.get(end) ?? 0, top));
+    }
+  });
+  return { tops, atPoint };
+}
+
+function pushWallQuad(bucket, x1, z1, x2, z2, baseY, topY) {
+  const span = Math.hypot(x2 - x1, z2 - z1) || 1;
+  const worldHeight = Math.max(0.2, topY - baseY);
+  pushQuad(
+    bucket,
+    [x1, baseY, z1],
+    [x2, baseY, z2],
+    [x1, topY, z1],
+    [x2, topY, z2],
+    span,
+    worldHeight / 1.8,
+  );
+}
+
 export function buildWallMeshes(data, defs, textures) {
   const groups = new Map();
-  for (const [x1, z1, x2, z2, elevation, wallId] of data.walls || []) {
+  const { tops } = levelWallTops(data, defs);
+  (data.walls || []).forEach((wall, index) => {
+    const [x1, z1, x2, z2, elevation, wallId] = wall;
     const kind = defs?.wallKinds?.[wallId];
-    if (!kind || kind.invisible) continue;
-    if (kind.colour === "transparent" && kind.texture == null) continue;
+    if (!kind || isDoorWall(kind) || kind.invisible) return;
+    if (kind.colour === "transparent" && kind.texture == null) return;
 
     const texture = kind.texture != null ? textures.get(kind.texture) : null;
     const colour = parseCssColour(kind.colour) ?? 0x7a746c;
-    if (!texture && kind.texture != null) continue;
+    if (!texture && kind.texture != null) return;
 
     const key = texture ? `tex:${kind.texture}` : `col:${colour}:${kind.height}`;
     const bucket = groupBucket(groups, key, { texture, colour });
-    const y = elevation * data.heightScale + 0.02;
-    const height = (kind.height || 192) * WALL_HEIGHT_UNIT;
-    const span = Math.hypot(x2 - x1, z2 - z1) || 1;
-    pushQuad(
-      bucket,
-      [x1, y, z1],
-      [x2, y, z2],
-      [x1, y + height, z1],
-      [x2, y + height, z2],
-      span,
-      height / 1.8,
-    );
-  }
+    const baseY = elevation * data.heightScale + 0.02;
+    const ownTop = baseY + (kind.height || 192) * WALL_HEIGHT_UNIT;
+    pushWallQuad(bucket, x1, z1, x2, z2, baseY, Math.max(ownTop, tops.get(index) ?? ownTop));
+  });
   return meshesFromGroups(groups);
+}
+
+export function buildDoorMeshes(data, defs, textures, openDoorIndexes) {
+  const open = openDoorIndexes || new Set();
+  const { atPoint } = levelWallTops(data, defs);
+  const meshes = [];
+  (data.walls || []).forEach((wall, index) => {
+    if (open.has(index)) return;
+    const [x1, z1, x2, z2, elevation, wallId] = wall;
+    const kind = defs?.wallKinds?.[wallId];
+    if (!isDoorWall(kind) || kind.blocked === false) return;
+    const textureId = kind.texture;
+    const texture = textureId != null ? textures.get(textureId) : null;
+    if (!texture) return;
+
+    const groups = new Map();
+    const bucket = groupBucket(groups, "door", { texture, colour: 0xffffff });
+    const baseY = elevation * data.heightScale + 0.02;
+    const ownTop = baseY + (kind.height || 192) * WALL_HEIGHT_UNIT;
+    const neighbourTop = Math.max(
+      atPoint.get(`${x1},${z1}`) ?? 0,
+      atPoint.get(`${x2},${z2}`) ?? 0,
+    );
+    pushWallQuad(bucket, x1, z1, x2, z2, baseY, Math.max(ownTop, neighbourTop));
+    const [mesh] = meshesFromGroups(groups);
+    if (!mesh) return;
+    mesh.userData.door = {
+      index,
+      wall,
+      name: kind.name || "Door",
+      description: "A wooden door.",
+    };
+    meshes.push(mesh);
+  });
+  return meshes;
 }
 
 const FLOOR_WALL_INSET = 0.1;

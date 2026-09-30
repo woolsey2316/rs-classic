@@ -43,7 +43,7 @@ const edgeKey = (ax, az, bx, bz) =>
  * the overlay definitions, plus the wall segments that block movement between
  * two otherwise walkable tiles.
  */
-export function buildNavGrid(data) {
+export function buildNavGrid(data, { wallKinds = null, openDoors = null } = {}) {
   const { width, depth } = data;
   const blockedTiles = new Uint8Array(width * depth);
   const blockedEdges = new Set();
@@ -52,26 +52,28 @@ export function buildNavGrid(data) {
     blockedTiles[i] = data.blocked[i] ? 1 : 0;
   }
 
-  for (const [x1, z1, x2, z2] of data.walls) {
+  (data.walls || []).forEach((wall, index) => {
+    const [x1, z1, x2, z2, , wallId] = wall;
+    const kind = wallKinds?.[wallId];
+    if (openDoors?.has(index)) return;
+    if (kind && kind.blocked === false) return;
+
     if (x1 === x2) {
-      // Vertical wall: separates the tiles either side of the x1 grid line.
       const east = { x: x1, z: z1 };
       const west = { x: x1 - 1, z: z1 };
       blockedEdges.add(edgeKey(west.x, west.z, east.x, east.z));
     } else if (z1 === z2) {
-      // Horizontal wall: separates the tiles either side of the z1 grid line.
       const south = { x: x1, z: z1 };
       const north = { x: x1, z: z1 - 1 };
       blockedEdges.add(edgeKey(north.x, north.z, south.x, south.z));
     } else {
-      // Diagonal walls fill their whole tile.
       const x = Math.min(x1, x2);
       const z = Math.min(z1, z2);
       if (x >= 0 && z >= 0 && x < width && z < depth) {
         blockedTiles[z * width + x] = 1;
       }
     }
-  }
+  });
 
   return { width, depth, blockedTiles, blockedEdges };
 }

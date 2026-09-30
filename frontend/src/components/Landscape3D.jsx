@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { fromGameCoords } from "../game/landscapeGrid";
 import {
+  buildDoorMeshes,
   buildFloorMeshes,
   buildRoofMeshes,
   buildWallMeshes,
@@ -302,11 +303,14 @@ export default function Landscape3D({
   destination = null,
   selectedTile = null,
   scenery = null,
+  openDoors = null,
   onLoad,
   onTileClick,
   onTileContextMenu,
   onSceneryClick,
   onSceneryContextMenu,
+  onDoorClick,
+  onDoorContextMenu,
 }) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
@@ -320,6 +324,8 @@ export default function Landscape3D({
     onTileContextMenu,
     onSceneryClick,
     onSceneryContextMenu,
+    onDoorClick,
+    onDoorContextMenu,
   };
 
   useEffect(() => {
@@ -422,6 +428,9 @@ export default function Landscape3D({
         const sceneryGroup = new THREE.Group();
         sceneryGroup.name = "scenery";
         scene.add(sceneryGroup);
+        const doorsGroup = new THREE.Group();
+        doorsGroup.name = "doors";
+        scene.add(doorsGroup);
         const sceneryKit = createSceneryKit();
         resources.push({ dispose: () => sceneryKit.dispose() });
 
@@ -455,6 +464,14 @@ export default function Landscape3D({
           const screen = { x: event.clientX, y: event.clientY };
 
           const sceneryHit = raycaster.intersectObject(sceneryGroup, true)[0];
+          const doorHit = raycaster.intersectObject(doorsGroup, true)[0];
+          if (doorHit && (!sceneryHit || doorHit.distance <= sceneryHit.distance)) {
+            let node = doorHit.object;
+            while (node && node !== doorsGroup && !node.userData?.door) node = node.parent;
+            if (node?.userData?.door) {
+              return { type: "door", door: node.userData.door, screen };
+            }
+          }
           if (sceneryHit) {
             let node = sceneryHit.object;
             while (node && node !== sceneryGroup && !node.userData?.placement) {
@@ -494,6 +511,10 @@ export default function Landscape3D({
           if (dragged) return;
           const hit = pickHit(event);
           if (!hit) return;
+          if (hit.type === "door") {
+            handlersRef.current.onDoorClick?.(hit.door);
+            return;
+          }
           if (hit.type === "scenery") {
             handlersRef.current.onSceneryClick?.(hit.placement);
             return;
@@ -513,6 +534,13 @@ export default function Landscape3D({
           const hit = pickHit(event);
           if (!hit) {
             handlersRef.current.onTileContextMenu?.(null);
+            return;
+          }
+          if (hit.type === "door") {
+            handlersRef.current.onDoorContextMenu?.({
+              door: hit.door,
+              screen: hit.screen,
+            });
             return;
           }
           if (hit.type === "scenery") {
@@ -560,6 +588,9 @@ export default function Landscape3D({
           cameraFollowTarget: controls.target.clone(),
           sceneryGroup,
           sceneryKit,
+          doorsGroup,
+          defs,
+          rscTextures,
         };
 
         setMessage("");
@@ -605,6 +636,21 @@ export default function Landscape3D({
       host.replaceChildren();
     };
   }, [src]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view?.doorsGroup || !view.defs || !view.rscTextures) return;
+    const { doorsGroup, data, defs, rscTextures } = view;
+    for (const child of [...doorsGroup.children]) {
+      child.geometry?.dispose();
+      child.material?.dispose();
+      doorsGroup.remove(child);
+    }
+    const open = openDoors instanceof Set ? openDoors : new Set(openDoors || []);
+    for (const mesh of buildDoorMeshes(data, defs, rscTextures, open)) {
+      doorsGroup.add(mesh);
+    }
+  }, [openDoors, ready]);
 
   useEffect(() => {
     const view = viewRef.current;
