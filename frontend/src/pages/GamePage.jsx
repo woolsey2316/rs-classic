@@ -20,9 +20,9 @@ import {
   toGameCoords,
 } from "../game/landscapeGrid";
 import { examineItem } from "../game/worldInfo";
+import { onTick } from "../game/tick";
 import { useAuth } from "../hooks/useAuth";
 
-const STEP_MS = 180;
 const IDLE_STATUS = "Click the ground to walk. Right-click for options.";
 const TREASURE_CHEST_KIND_ID = 900001;
 
@@ -95,16 +95,18 @@ export default function GamePage() {
     walkingRef.current = true;
     try {
       while (pathRef.current.length) {
-        const next = pathRef.current.shift();
-        const current = posRef.current;
-        if (current) {
-          const dx = next.x - current.x;
-          const dz = next.z - current.z;
-          if (dx !== 0 || dz !== 0) setFacing({ x: dx, z: dz });
-        }
-        setPos(next);
-        posRef.current = next;
-        await new Promise((resolve) => setTimeout(resolve, STEP_MS));
+        await onTick(() => {
+          const next = pathRef.current.shift();
+          if (!next) return;
+          const current = posRef.current;
+          if (current) {
+            const dx = next.x - current.x;
+            const dz = next.z - current.z;
+            if (dx !== 0 || dz !== 0) setFacing({ x: dx, z: dz });
+          }
+          setPos(next);
+          posRef.current = next;
+        });
       }
     } finally {
       walkingRef.current = false;
@@ -199,7 +201,9 @@ export default function GamePage() {
       const game = toGameCoords(land, posRef.current.x, posRef.current.z);
       setStatus("You swing your axe at the tree…");
       try {
-        const result = await chopTree(placement.object.id, game.x, game.y);
+        const result = await onTick(() =>
+          chopTree(placement.object.id, game.x, game.y),
+        );
         setPlayer(result.player);
         if (result.scenery_update) {
           setScenery((prev) => {
@@ -265,11 +269,8 @@ export default function GamePage() {
     if (!chest?.sceneryId || !land || !posRef.current) return;
     const game = toGameCoords(land, posRef.current.x, posRef.current.z);
     try {
-      const result = await takeFromTreasureChest(
-        chest.sceneryId,
-        itemKey,
-        game.x,
-        game.y,
+      const result = await onTick(() =>
+        takeFromTreasureChest(chest.sceneryId, itemKey, game.x, game.y),
       );
       setPlayer(result.player);
       setStatus(result.message || `You take the ${itemName.toLowerCase()}.`);
@@ -307,7 +308,9 @@ export default function GamePage() {
       const game = toGameCoords(land, posRef.current.x, posRef.current.z);
       setStatus(action === "open" ? "You open the gate…" : "You close the gate…");
       try {
-        const result = await toggleDoor(placement.object.id, game.x, game.y, action);
+        const result = await onTick(() =>
+          toggleDoor(placement.object.id, game.x, game.y, action),
+        );
         applySceneryKind(result.scenery_update, result.kind);
         setStatus(result.message);
       } catch (err) {
@@ -442,7 +445,7 @@ export default function GamePage() {
 
   async function onEquip(slotIndex) {
     try {
-      const updated = await equipItem(slotIndex);
+      const updated = await onTick(() => equipItem(slotIndex));
       setPlayer(updated);
       setStatus("Equipped.");
     } catch (err) {
@@ -452,7 +455,7 @@ export default function GamePage() {
 
   async function onDrop(slotIndex, itemName) {
     try {
-      const updated = await dropItem(slotIndex);
+      const updated = await onTick(() => dropItem(slotIndex));
       setPlayer(updated);
       setStatus(itemName ? `You drop the ${itemName}.` : "You drop the item.");
     } catch (err) {
@@ -462,7 +465,7 @@ export default function GamePage() {
 
   async function onUnequip(slot) {
     try {
-      const updated = await unequipItem(slot);
+      const updated = await onTick(() => unequipItem(slot));
       setPlayer(updated);
       setStatus("Unequipped.");
     } catch (err) {

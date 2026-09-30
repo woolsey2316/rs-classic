@@ -19,6 +19,7 @@ from .serializers import (
     UnequipSerializer,
 )
 from .doors import toggle_door
+from .tick import TICK_WAIT, reserve_tick
 from .treasure_chest import take_from_treasure_chest
 from .woodcutting import attempt_chop
 
@@ -32,6 +33,14 @@ def get_player(user: User) -> Player:
     player.ensure_inventory()
     player.ensure_equipment()
     return player
+
+
+def player_for_action(user: User):
+    """Return the player, or a 400 response if their last action is still this tick."""
+    player = get_player(user)
+    if not reserve_tick(player):
+        return None, Response({"detail": TICK_WAIT}, status=status.HTTP_400_BAD_REQUEST)
+    return player, None
 
 
 class RegisterView(APIView):
@@ -69,7 +78,9 @@ class EquipView(APIView):
     def post(self, request):
         serializer = EquipSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        player = get_player(request.user)
+        player, waiting = player_for_action(request.user)
+        if waiting:
+            return waiting
 
         try:
             inv = player.inventory_slots.select_related("item").get(
@@ -110,7 +121,9 @@ class UnequipView(APIView):
     def post(self, request):
         serializer = UnequipSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        player = get_player(request.user)
+        player, waiting = player_for_action(request.user)
+        if waiting:
+            return waiting
 
         try:
             equipment = player.equipment.select_related("item").get(
@@ -150,7 +163,9 @@ class DropView(APIView):
     def post(self, request):
         serializer = EquipSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        player = get_player(request.user)
+        player, waiting = player_for_action(request.user)
+        if waiting:
+            return waiting
 
         try:
             inv = player.inventory_slots.select_related("item").get(
@@ -175,7 +190,9 @@ class TakeView(APIView):
     def post(self, request):
         serializer = TakeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        player = get_player(request.user)
+        player, waiting = player_for_action(request.user)
+        if waiting:
+            return waiting
 
         try:
             ground = GroundItem.objects.select_related("item").get(
@@ -236,7 +253,9 @@ class ChopView(APIView):
     def post(self, request):
         serializer = ChopSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        player = get_player(request.user)
+        player, waiting = player_for_action(request.user)
+        if waiting:
+            return waiting
 
         result = attempt_chop(
             player,
@@ -268,6 +287,9 @@ class DoorView(APIView):
     def post(self, request):
         serializer = DoorSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        _, waiting = player_for_action(request.user)
+        if waiting:
+            return waiting
         result = toggle_door(
             serializer.validated_data["scenery_id"],
             serializer.validated_data["player_x"],
@@ -314,7 +336,9 @@ class TreasureChestTakeView(APIView):
     def post(self, request):
         serializer = TreasureChestTakeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        player = get_player(request.user)
+        player, waiting = player_for_action(request.user)
+        if waiting:
+            return waiting
 
         result = take_from_treasure_chest(
             player,

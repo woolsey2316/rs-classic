@@ -96,6 +96,8 @@ class Player(models.Model):
     # Tile coordinates in the overworld grid.
     x = models.PositiveIntegerField(default=12)
     y = models.PositiveIntegerField(default=10)
+    # Last server-verified action. Movement and gathering share this 600ms cycle.
+    last_action_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
