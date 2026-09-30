@@ -178,6 +178,10 @@ class DoorSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=("open", "close"))
 
 
+class FightSerializer(serializers.Serializer):
+    rat_hits = serializers.IntegerField(min_value=1, max_value=30)
+
+
 class TreasureChestTakeSerializer(serializers.Serializer):
     scenery_id = serializers.IntegerField(min_value=1)
     item_key = serializers.SlugField(max_length=64)

@@ -18,6 +18,7 @@ import {
   equippedSpriteUrl,
   spriteViewFromCamera,
 } from "../game/playerSprite";
+import { FIGHT_FRAMES } from "../game/rats";
 import { createSceneryKit, makeSceneryMesh } from "../game/sceneryMeshes";
 import {
   clickIconFrame,
@@ -332,16 +333,29 @@ function updateRats(view, rats, now) {
     }
     sprite.position.copy(shown);
     sprite.userData.rat = rat;
-    const frame = ratFrame(
-      rat.facing,
-      {
-        x: view.camera.position.x - shown.x,
-        z: view.camera.position.z - shown.z,
-      },
-      rat.moving,
-      rat.step,
-    );
-    const texture = view.ratTextures[frame];
+    sprite.visible = !rat.dead;
+    if (rat.dead) continue;
+    let frame;
+    let texture;
+    if (rat.fighting) {
+      const swing = FIGHT_FRAMES[Math.floor(now / 200) % FIGHT_FRAMES.length];
+      const toPlayer = new THREE.Vector3().subVectors(view.player.position, shown);
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(view.camera.quaternion);
+      const flip = toPlayer.dot(right) < 0;
+      frame = swing;
+      texture = flip ? view.ratFightFlip?.[swing] : view.ratTextures[swing];
+    } else {
+      frame = ratFrame(
+        rat.facing,
+        {
+          x: view.camera.position.x - shown.x,
+          z: view.camera.position.z - shown.z,
+        },
+        rat.moving,
+        rat.step,
+      );
+      texture = view.ratTextures[frame];
+    }
     if (texture && sprite.material.map !== texture) {
       sprite.material.map = texture;
       sprite.material.needsUpdate = true;
@@ -358,7 +372,7 @@ function ratUnderPointer(ratsGroup, camera, rect, event) {
   let closest = null;
   let closestDist = 36;
   for (const sprite of ratsGroup.children) {
-    if (!sprite.userData?.rat) continue;
+    if (!sprite.userData?.rat || sprite.userData.rat.dead || !sprite.visible) continue;
     point.copy(sprite.position);
     point.y += RAT_HEIGHT * 0.55;
     point.project(camera);
@@ -372,6 +386,99 @@ function ratUnderPointer(ratsGroup, camera, rect, event) {
     }
   }
   return closest;
+}
+
+const SPLAT_LIFE = 1200;
+const splatTextureCache = new Map();
+
+function splatTexture(images, damage) {
+  const kind = damage > 0 ? 0 : 1;
+  const image = images?.[kind];
+  if (!image?.width) return null;
+  const key = `${kind}:${damage}`;
+  const cached = splatTextureCache.get(key);
+  if (cached) return cached;
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(image, 0, 0);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `bold ${damage > 9 ? 9 : 11}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(damage), canvas.width / 2, canvas.height / 2 + 0.5);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  splatTextureCache.set(key, texture);
+  return texture;
+}
+
+function loadSplatImages() {
+  return Promise.all(
+    [0, 1].map(
+      (frame) =>
+        new Promise((resolve) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => resolve(null);
+          image.src = `/sprites/rsc/media/splat/${frame}.png`;
+        }),
+    ),
+  );
+}
+
+function updateSplats(view, splats, now) {
+  const group = view.splatGroup;
+  if (!group || !view.splatImages) return;
+  const seen = new Set();
+  for (const splat of splats || []) {
+    const age = now - splat.born;
+    if (age < 0 || age > SPLAT_LIFE) continue;
+    const texture = splatTexture(view.splatImages, splat.damage);
+    if (!texture) continue;
+    seen.add(splat.id);
+    let sprite = group.getObjectByName(`splat-${splat.id}`);
+    if (!sprite) {
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      });
+      sprite = new THREE.Sprite(material);
+      sprite.name = `splat-${splat.id}`;
+      sprite.center.set(0.5, 0.5);
+      sprite.scale.set(0.48, 0.48, 1);
+      sprite.renderOrder = 1100;
+      group.add(sprite);
+    }
+    const rise = (age / SPLAT_LIFE) * 0.45;
+    if (splat.target === "player") {
+      const pos = view.player.position;
+      sprite.position.set(pos.x, pos.y + PLAYER_HEIGHT + 0.12 + rise, pos.z);
+    } else {
+      const ratSprite = view.ratsGroup?.getObjectByName(`rat-${splat.ratId}`);
+      if (!ratSprite) continue;
+      sprite.position.set(
+        ratSprite.position.x,
+        ratSprite.position.y + RAT_HEIGHT + 0.18 + rise,
+        ratSprite.position.z,
+      );
+    }
+    const fadeAt = SPLAT_LIFE * 0.65;
+    sprite.material.opacity = age > fadeAt ? 1 - (age - fadeAt) / (SPLAT_LIFE - fadeAt) : 1;
+  }
+  for (const child of [...group.children]) {
+    const id = Number(String(child.name).slice(6));
+    if (!seen.has(id)) {
+      child.material.dispose();
+      group.remove(child);
+    }
+  }
 }
 
 function loadClickIconTextures() {
@@ -469,7 +576,7 @@ function updatePlayerMotion(view, now) {
   followPlayerWithCamera(view, shown);
   updateNearbyRoofs(view, shown.x, shown.z);
   walkUniforms.uTime.value = now * 0.001;
-  walkUniforms.uWalk.value = motion.from ? 1 : 0;
+  walkUniforms.uWalk.value = motion.from || view.playerFighting ? 1 : 0;
 }
 
 const ROOF_HIDE_TILES = 1;
@@ -507,6 +614,8 @@ export default function Landscape3D({
   openDoors = null,
   equipmentIds = [],
   rats = [],
+  hitsplats = [],
+  playerFighting = false,
   onLoad,
   onTileClick,
   onTileContextMenu,
@@ -522,6 +631,10 @@ export default function Landscape3D({
   const handlersRef = useRef({});
   const ratsRef = useRef(rats);
   ratsRef.current = rats;
+  const splatsRef = useRef(hitsplats);
+  splatsRef.current = hitsplats;
+  const fightingRef = useRef(playerFighting);
+  fightingRef.current = playerFighting;
   const [message, setMessage] = useState("Loading RSC landscape…");
   const [ready, setReady] = useState(0);
 
@@ -601,15 +714,18 @@ export default function Landscape3D({
         const playerTexturesPromise = loadPlayerTextures();
         const clickIconTexturesPromise = loadClickIconTextures();
         const ratTexturesPromise = loadRatTextures();
+        const splatImagesPromise = loadSplatImages();
         const rscTexturesPromise = defs
           ? loadRscTextures(collectTextureIds(data, defs))
           : Promise.resolve(new Map());
-        const [playerTextures, clickIconTextures, rscTextures, ratTextures] = await Promise.all([
-          playerTexturesPromise,
-          clickIconTexturesPromise,
-          rscTexturesPromise,
-          ratTexturesPromise,
-        ]);
+        const [playerTextures, clickIconTextures, rscTextures, ratTextures, splatImages] =
+          await Promise.all([
+            playerTexturesPromise,
+            clickIconTexturesPromise,
+            rscTexturesPromise,
+            ratTexturesPromise,
+            splatImagesPromise,
+          ]);
         if (disposed) return;
 
         let roofMeshes = [];
@@ -647,6 +763,9 @@ export default function Landscape3D({
         const ratsGroup = new THREE.Group();
         ratsGroup.name = "rats";
         scene.add(ratsGroup);
+        const splatGroup = new THREE.Group();
+        splatGroup.name = "hitsplats";
+        scene.add(splatGroup);
         const sceneryKit = createSceneryKit();
         resources.push({ dispose: () => sceneryKit.dispose() });
 
@@ -821,6 +940,11 @@ export default function Landscape3D({
           doorsGroup,
           ratsGroup,
           ratTextures,
+          ratFightFlip: ratTextures.map((texture, index) =>
+            FIGHT_FRAMES.includes(index) && texture ? flippedTexture(texture) : null,
+          ),
+          splatGroup,
+          splatImages,
           defs,
           rscTextures,
           roofs: roofMeshes,
@@ -834,8 +958,10 @@ export default function Landscape3D({
           if (disposed) return;
           const view = viewRef.current;
           if (view) {
+            view.playerFighting = fightingRef.current;
             updatePlayerMotion(view, performance.now());
             updateRats(view, ratsRef.current, performance.now());
+            updateSplats(view, splatsRef.current, performance.now());
           }
           controls.update();
           if (player.visible) updatePlayerSprite(player, camera);

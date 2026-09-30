@@ -116,6 +116,13 @@ export async function takeFromTreasureChest(sceneryId, item, playerX, playerY) {
   });
 }
 
+export async function fightRat(ratHits) {
+  return api("/api/world/fight/", {
+    method: "POST",
+    body: { rat_hits: ratHits },
+  });
+}
+
 export async function fetchScenery({ minX, maxX, minY, maxY }) {
   const params = new URLSearchParams({
     min_x: String(minX),

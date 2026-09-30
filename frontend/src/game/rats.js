@@ -18,6 +18,10 @@ const STEP_DIRS = [
 ];
 
 export const RAT_EXAMINE = "A small, filthy rat.";
+export const RAT_HITS = 2;
+export const RAT_RESPAWN_TICKS = 120;
+/** Entity frames 15–17 are the combat animation for every monster. */
+export const FIGHT_FRAMES = [15, 16, 17];
 
 function shuffle(list) {
   const copy = [...list];
@@ -55,12 +59,64 @@ export function spawnRats(nav, home) {
       facing: { x: 0, z: 1 },
       moving: false,
       step: 0,
+      hits: RAT_HITS,
+      dead: false,
+      fighting: false,
+      respawnIn: 0,
     });
   }
   return rats;
 }
 
+function respawnRat(rat, nav, home) {
+  const origin = nearestWalkable(nav, home, RAT_WANDER_RADIUS) || home;
+  let tile = origin;
+  for (const [dx, dz] of shuffle(STEP_DIRS.concat([[0, 0]]))) {
+    const candidate = { x: origin.x + dx, z: origin.z + dz };
+    if (!isWalkable(nav, candidate.x, candidate.z)) continue;
+    if (!withinHome(candidate, origin)) continue;
+    tile = candidate;
+    break;
+  }
+  return {
+    ...rat,
+    x: tile.x,
+    z: tile.z,
+    facing: { x: 0, z: 1 },
+    moving: false,
+    fighting: false,
+    dead: false,
+    hits: RAT_HITS,
+    respawnIn: 0,
+  };
+}
+
+export function tileBeside(nav, from, target) {
+  const tiles = [];
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dz = -1; dz <= 1; dz += 1) {
+      if (dx === 0 && dz === 0) continue;
+      const tile = { x: target.x + dx, z: target.z + dz };
+      if (!isWalkable(nav, tile.x, tile.z)) continue;
+      const dist = from
+        ? Math.max(Math.abs(tile.x - from.x), Math.abs(tile.z - from.z))
+        : 0;
+      tiles.push({ tile, dist });
+    }
+  }
+  tiles.sort((a, b) => a.dist - b.dist);
+  return tiles[0]?.tile || null;
+}
+
 export function stepRat(rat, nav, home) {
+  if (rat.dead) {
+    const left = (rat.respawnIn || 0) - 1;
+    if (left > 0) return { ...rat, respawnIn: left, moving: false, fighting: false };
+    return respawnRat(rat, nav, home);
+  }
+  if (rat.fighting) {
+    return { ...rat, moving: false };
+  }
   if (!nav || Math.random() < RAT_IDLE_CHANCE) {
     return { ...rat, moving: false };
   }

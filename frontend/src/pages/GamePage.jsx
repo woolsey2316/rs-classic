@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { dropItem, equipItem, fetchScenery, chopTree, fetchTreasureChestContents, takeFromTreasureChest, toggleDoor, unequipItem } from "../api/client";
+import { dropItem, equipItem, fetchScenery, chopTree, fetchTreasureChestContents, fightRat, takeFromTreasureChest, toggleDoor, unequipItem } from "../api/client";
 import ContextMenu from "../components/ContextMenu";
 import EquipmentPanel from "../components/EquipmentPanel";
 import InventoryPanel from "../components/InventoryPanel";
@@ -22,7 +22,7 @@ import {
 } from "../game/landscapeGrid";
 import { examineItem } from "../game/worldInfo";
 import { equippedItemIds } from "../game/playerSprite";
-import { RAT_EXAMINE, RAT_HOME, spawnRats, stepRat } from "../game/rats";
+import { RAT_EXAMINE, RAT_HOME, RAT_RESPAWN_TICKS, spawnRats, stepRat, tileBeside } from "../game/rats";
 import { TICK_MS, onTick } from "../game/tick";
 import { useAuth } from "../hooks/useAuth";
 
@@ -43,6 +43,8 @@ export default function GamePage() {
   const [wallKinds, setWallKinds] = useState(null);
   const [openDoors, setOpenDoors] = useState([]);
   const [rats, setRats] = useState([]);
+  const [hitsplats, setHitsplats] = useState([]);
+  const [playerFighting, setPlayerFighting] = useState(false);
   const [pos, setPos] = useState(null);
   const [facing, setFacing] = useState({ x: 0, z: 1 });
   const [destination, setDestination] = useState(null);
@@ -72,7 +74,17 @@ export default function GamePage() {
 
   const navRef = useRef(nav);
   navRef.current = nav;
+  const landRef = useRef(land);
+  landRef.current = land;
   const ratHomeRef = useRef(null);
+  const ratsStateRef = useRef([]);
+  const fightingRef = useRef(null);
+  const fightBusyRef = useRef(false);
+  const splatSeq = useRef(1);
+
+  useEffect(() => {
+    ratsStateRef.current = rats;
+  }, [rats]);
 
   const onLandscapeLoad = useCallback((data) => {
     setLand(data);
@@ -89,7 +101,11 @@ export default function GamePage() {
       const grid = navRef.current;
       const origin = ratHomeRef.current;
       if (!grid || !origin) return;
-      setRats((prev) => prev.map((rat) => stepRat(rat, grid, origin)));
+      setRats((prev) => {
+        const next = prev.map((rat) => stepRat(rat, grid, origin));
+        ratsStateRef.current = next;
+        return next;
+      });
     }, TICK_MS);
     return () => clearInterval(timer);
   }, [land]);
@@ -159,7 +175,7 @@ export default function GamePage() {
       pendingActionRef.current = null;
       if (pending) {
         await pending();
-      } else {
+      } else if (!fightingRef.current) {
         setStatus(IDLE_STATUS);
       }
     }
@@ -167,6 +183,15 @@ export default function GamePage() {
 
   const startWalk = useCallback(
     (tile) => {
+      if (fightingRef.current) {
+        fightingRef.current = null;
+        setPlayerFighting(false);
+        setRats((prev) => {
+          const next = prev.map((rat) => (rat.fighting ? { ...rat, fighting: false } : rat));
+          ratsStateRef.current = next;
+          return next;
+        });
+      }
       if (!nav || !posRef.current) return;
       if (posRef.current.x === tile.x && posRef.current.z === tile.z) {
         setStatus("You're already standing there.");
@@ -186,6 +211,166 @@ export default function GamePage() {
     },
     [land, nav, walkLoop],
   );
+
+  const fightLoop = useCallback(async () => {
+    if (fightBusyRef.current) return;
+    fightBusyRef.current = true;
+    try {
+      while (fightingRef.current) {
+        await onTick(async () => {
+          const session = fightingRef.current;
+          if (!session) return;
+          const rat = ratsStateRef.current.find((entry) => entry.id === session.ratId);
+          const here = posRef.current;
+          if (!rat || rat.dead || !rat.hits || !isAdjacentTile(here, rat)) {
+            fightingRef.current = null;
+            setPlayerFighting(false);
+            setRats((prev) => {
+              const next = prev.map((entry) =>
+                entry.fighting ? { ...entry, fighting: false } : entry,
+              );
+              ratsStateRef.current = next;
+              return next;
+            });
+            if (rat && !rat.dead) setStatus("You retreat from the rat.");
+            return;
+          }
+          const dx = rat.x - here.x;
+          const dz = rat.z - here.z;
+          if (dx !== 0 || dz !== 0) setFacing({ x: Math.sign(dx), z: Math.sign(dz) });
+          try {
+            const result = await fightRat(rat.hits);
+            setPlayer(result.player);
+            const born = performance.now();
+            setHitsplats((prev) => {
+              const fresh = prev.filter((splat) => born - splat.born < 1600);
+              fresh.push({
+                id: splatSeq.current,
+                target: "rat",
+                ratId: rat.id,
+                damage: result.player_damage,
+                born,
+              });
+              splatSeq.current += 1;
+              if (!result.killed) {
+                fresh.push({
+                  id: splatSeq.current,
+                  target: "player",
+                  damage: result.rat_damage,
+                  born,
+                });
+                splatSeq.current += 1;
+              }
+              return fresh;
+            });
+            setRats((prev) => {
+              const next = prev.map((entry) =>
+                entry.id === rat.id
+                  ? {
+                      ...entry,
+                      hits: result.rat_hits,
+                      fighting: !result.killed && !result.player_dead,
+                      dead: result.killed,
+                      respawnIn: result.killed ? RAT_RESPAWN_TICKS : 0,
+                      moving: false,
+                    }
+                  : entry,
+              );
+              ratsStateRef.current = next;
+              return next;
+            });
+            if (result.killed) {
+              fightingRef.current = null;
+              setPlayerFighting(false);
+              const labels = { attack: "Attack", hits: "Hits", strength: "Strength", defense: "Defense" };
+              const notes = Object.entries(result.xp || {})
+                .filter(([, amount]) => amount)
+                .map(([skill, amount]) => `+${amount} ${labels[skill] || skill}`);
+              setStatus(
+                notes.length ? `You defeat the rat. (${notes.join(", ")})` : "You defeat the rat.",
+              );
+            } else if (result.player_dead) {
+              fightingRef.current = null;
+              setPlayerFighting(false);
+              const grid = navRef.current;
+              const data = landRef.current;
+              const spawn =
+                grid && data
+                  ? nearestWalkable(grid, {
+                      x: data.spawn?.x ?? Math.floor(data.width / 2),
+                      z: data.spawn?.z ?? Math.floor(data.depth / 2),
+                    })
+                  : null;
+              if (spawn) {
+                pathRef.current = [];
+                posRef.current = spawn;
+                setPos(spawn);
+                setDestination(null);
+              }
+              setStatus("Oh dear, you are dead!");
+            }
+          } catch (err) {
+            if (!String(err.message || "").includes("game tick")) {
+              fightingRef.current = null;
+              setPlayerFighting(false);
+              setRats((prev) => {
+                const next = prev.map((entry) =>
+                  entry.fighting ? { ...entry, fighting: false } : entry,
+                );
+                ratsStateRef.current = next;
+                return next;
+              });
+              setStatus(err.message || "You stop fighting.");
+            }
+          }
+        });
+      }
+    } finally {
+      fightBusyRef.current = false;
+    }
+  }, [setPlayer]);
+
+  function startFight(ratId) {
+    fightingRef.current = { ratId };
+    setPlayerFighting(true);
+    setStatus("You start fighting the rat.");
+    setRats((prev) => {
+      const next = prev.map((rat) => ({
+        ...rat,
+        fighting: rat.id === ratId && !rat.dead,
+      }));
+      ratsStateRef.current = next;
+      return next;
+    });
+    const rat = ratsStateRef.current.find((entry) => entry.id === ratId);
+    const here = posRef.current;
+    if (rat && here) {
+      const dx = rat.x - here.x;
+      const dz = rat.z - here.z;
+      if (dx !== 0 || dz !== 0) setFacing({ x: Math.sign(dx), z: Math.sign(dz) });
+    }
+    fightLoop();
+  }
+
+  function attackRat(rat) {
+    if (!navRef.current || !rat || rat.dead) return;
+    const engage = () => {
+      const live = ratsStateRef.current.find((entry) => entry.id === rat.id) || rat;
+      if (!live || live.dead) return;
+      if (!isAdjacentTile(posRef.current, live)) {
+        const goal = tileBeside(navRef.current, posRef.current, live);
+        if (!goal) {
+          setStatus("You can't get close enough to the rat.");
+          return;
+        }
+        pendingActionRef.current = engage;
+        startWalk(goal);
+        return;
+      }
+      startFight(live.id);
+    };
+    engage();
+  }
 
   function onTileClick(tile) {
     closeMenu();
@@ -580,7 +765,7 @@ export default function GamePage() {
 
     if (payload.type === "rat") {
       if (actionId === "attack") {
-        setStatus("You aren't ready to fight the rat.");
+        attackRat(payload.rat);
       } else if (actionId === "examine") {
         setStatus(RAT_EXAMINE);
       }
@@ -668,6 +853,8 @@ export default function GamePage() {
         openDoors={openDoorSet}
         equipmentIds={equippedItemIds(player.equipment)}
         rats={rats}
+        hitsplats={hitsplats}
+        playerFighting={playerFighting}
         onLoad={onLandscapeLoad}
         onTileClick={onTileClick}
         onTileContextMenu={onTileContextMenu}

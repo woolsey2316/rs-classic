@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     ChopView,
     DoorView,
+    FightView,
     DropView,
     EquipView,
     MeView,
@@ -25,6 +26,7 @@ urlpatterns = [
     path("inventory/drop/", DropView.as_view(), name="drop"),
     path("world/take/", TakeView.as_view(), name="take"),
     path("world/chop/", ChopView.as_view(), name="chop"),
+    path("world/fight/", FightView.as_view(), name="fight"),
     path("world/door/", DoorView.as_view(), name="door"),
     path(
         "world/treasure-chest/<int:scenery_id>/",

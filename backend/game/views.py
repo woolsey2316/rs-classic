@@ -8,6 +8,7 @@ from .models import Equipment, GroundItem, InventorySlot, Item, Player, Scenery,
 from .serializers import (
     ChopSerializer,
     DoorSerializer,
+    FightSerializer,
     EquipSerializer,
     GroundItemSerializer,
     ItemSerializer,
@@ -18,6 +19,7 @@ from .serializers import (
     TreasureChestTakeSerializer,
     UnequipSerializer,
 )
+from .combat import fight_rat
 from .doors import toggle_door
 from .item_equip import ensure_item_equip_slot
 from .tick import TICK_WAIT, reserve_tick
@@ -283,6 +285,34 @@ class ChopView(APIView):
         if result.get("scenery_update"):
             payload["scenery_update"] = result["scenery_update"]
         return Response(payload)
+
+
+class FightView(APIView):
+    """One melee round against a rat. The client keeps the rat; the server rolls the dice."""
+
+    def post(self, request):
+        serializer = FightSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        player, waiting = player_for_action(request.user)
+        if waiting:
+            return waiting
+
+        result = fight_rat(player, serializer.validated_data["rat_hits"])
+        if not result.get("ok"):
+            return Response({"detail": result["message"]}, status=status.HTTP_400_BAD_REQUEST)
+
+        fresh = get_player(request.user)
+        return Response(
+            {
+                "player": PlayerSerializer(fresh).data,
+                "player_damage": result["player_damage"],
+                "rat_damage": result["rat_damage"],
+                "rat_hits": result["rat_hits"],
+                "killed": result["killed"],
+                "player_dead": result["player_dead"],
+                "xp": result["xp"],
+            }
+        )
 
 
 class DoorView(APIView):
