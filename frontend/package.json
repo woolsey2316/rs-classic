@@ -23,6 +23,7 @@
     "@2003scape/rsc-landscape": "^2.0.1",
     "@2003scape/rsc-sprites": "github:2003scape/rsc-sprites",
     "@vitejs/plugin-react": "^4.3.4",
+    "rsc-sprite-generator": "file:../../rsc-sprite-generator",
     "vite": "^6.2.0"
   },
   "overrides": {

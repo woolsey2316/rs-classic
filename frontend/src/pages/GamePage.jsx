@@ -20,6 +20,7 @@ import {
   toGameCoords,
 } from "../game/landscapeGrid";
 import { examineItem } from "../game/worldInfo";
+import { equippedItemIds } from "../game/playerSprite";
 import { onTick } from "../game/tick";
 import { useAuth } from "../hooks/useAuth";
 
@@ -608,6 +609,7 @@ export default function GamePage() {
         }
         scenery={scenery}
         openDoors={openDoorSet}
+        equipmentIds={equippedItemIds(player.equipment)}
         onLoad={onLandscapeLoad}
         onTileClick={onTileClick}
         onTileContextMenu={onTileContextMenu}

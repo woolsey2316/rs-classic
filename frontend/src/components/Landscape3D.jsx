@@ -15,6 +15,7 @@ import {
   PLAYER_SPRITE_ANGLES,
   PLAYER_SPRITE_SIZE,
   playerSpriteUrl,
+  equippedSpriteUrl,
   spriteViewFromCamera,
 } from "../game/playerSprite";
 import { createSceneryKit, makeSceneryMesh } from "../game/sceneryMeshes";
@@ -165,21 +166,44 @@ function makePlayerMarker(textures) {
   return group;
 }
 
-function loadPlayerTextures() {
+function loadPlayerTextures(itemIds = []) {
   const loader = new THREE.TextureLoader();
+  const loadAngle = (angle, url) =>
+    new Promise((resolve) => {
+      loader.load(
+        url,
+        (texture) => resolve(texture),
+        undefined,
+        () => resolve(null),
+      );
+    });
+
   return Promise.all(
-    PLAYER_SPRITE_ANGLES.map(
-      (angle) =>
-        new Promise((resolve, reject) => {
-          loader.load(
-            playerSpriteUrl(angle),
-            (texture) => resolve([angle, texture]),
-            undefined,
-            () => reject(new Error(`Failed to load ${playerSpriteUrl(angle)}`)),
-          );
-        }),
-    ),
-  ).then((entries) => Object.fromEntries(entries));
+    PLAYER_SPRITE_ANGLES.map(async (angle) => {
+      const equipped = itemIds.length ? await loadAngle(angle, equippedSpriteUrl(angle, itemIds)) : null;
+      const texture = equipped || (await loadAngle(angle, playerSpriteUrl(angle)));
+      return [angle, texture];
+    }),
+  ).then((entries) => Object.fromEntries(entries.filter(([, texture]) => texture)));
+}
+
+function applyPlayerTextures(player, textures) {
+  const { sprite, materials, extraTextures } = player.userData;
+  extraTextures.forEach((texture) => texture.dispose());
+  extraTextures.length = 0;
+  for (const angle of PLAYER_SPRITE_ANGLES) {
+    const current = materials[angle];
+    if (current?.map && current.map !== textures[angle]) current.map.dispose();
+    materials[angle]?.dispose();
+    materials[`${angle}-flip`]?.dispose();
+    if (!textures[angle]) continue;
+    materials[angle] = spriteMaterial(textures[angle]);
+    const flipped = flippedTexture(textures[angle]);
+    extraTextures.push(flipped);
+    materials[`${angle}-flip`] = spriteMaterial(flipped);
+  }
+  player.userData.viewKey = "";
+  if (materials[0]) sprite.material = materials[0];
 }
 
 function updatePlayerSprite(player, camera) {
@@ -324,6 +348,7 @@ export default function Landscape3D({
   selectedTile = null,
   scenery = null,
   openDoors = null,
+  equipmentIds = [],
   onLoad,
   onTileClick,
   onTileContextMenu,
@@ -674,6 +699,23 @@ export default function Landscape3D({
       doorsGroup.add(mesh);
     }
   }, [openDoors, ready]);
+
+  const equipmentKey = equipmentIds.join(",");
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!ready || !view?.player || view.equipmentKey === equipmentKey) return undefined;
+    const ids = equipmentKey ? equipmentKey.split(",").map(Number) : [];
+    let cancelled = false;
+    loadPlayerTextures(ids).then((textures) => {
+      if (cancelled || !viewRef.current?.player || !Object.keys(textures).length) return;
+      applyPlayerTextures(viewRef.current.player, textures);
+      viewRef.current.equipmentKey = equipmentKey;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [equipmentKey, ready]);
 
   useEffect(() => {
     const view = viewRef.current;

@@ -37,11 +37,25 @@ services:
       - "5173:5173"
     environment:
       VITE_API_URL: http://localhost:8000
+      SPRITE_SERVER: http://sprite:5174
     depends_on:
       - backend
+      - sprite
     volumes:
       - ./frontend:/app
       - /app/node_modules
+
+  sprite:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.sprite
+    environment:
+      PLAYER_SPRITE_PORT: "5174"
+    volumes:
+      - ../rsc-sprite-generator:/rsc-sprite-generator:ro
+      - ./frontend:/frontend
+    expose:
+      - "5174"
 
 volumes:
   pgdata:

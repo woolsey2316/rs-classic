@@ -13,6 +13,22 @@ export function playerSpriteUrl(angle) {
   return `/sprites/player/stand-${angle}.png`;
 }
 
+/** Numeric RSC item ids worn by the character, from sprite filenames. */
+export function equippedItemIds(equipment) {
+  const ids = [];
+  for (const piece of equipment || []) {
+    const file = piece?.item?.sprite || "";
+    const head = file.split("/").pop().split("-")[0].replace(/\.png$/, "");
+    if (/^\d+$/.test(head)) ids.push(Number(head));
+  }
+  return [...new Set(ids)].sort((a, b) => a - b);
+}
+
+export function equippedSpriteUrl(angle, itemIds) {
+  if (!itemIds?.length) return playerSpriteUrl(angle);
+  return `/sprites/player/equipped/${itemIds.join("-")}/${angle}.png`;
+}
+
 /**
  * Pick which generated sprite to show from the camera's view of the player.
  * `facing` is a world-space XZ walk direction; `cameraOffset` is camera - player.

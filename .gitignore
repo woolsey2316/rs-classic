@@ -25,3 +25,4 @@ staticfiles/
 
 # Docker
 pgdata/
+frontend/public/sprites/player/equipped/
