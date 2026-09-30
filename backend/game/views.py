@@ -32,6 +32,7 @@ def get_player(user: User) -> Player:
     player.ensure_skills()
     player.ensure_inventory()
     player.ensure_equipment()
+    player.restore_skill_levels()
     return player
 
 

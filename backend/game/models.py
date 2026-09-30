@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from .xp import XP_TABLE, level_from_xp
 
@@ -135,11 +138,38 @@ class Player(models.Model):
         if missing:
             Equipment.objects.bulk_create(missing)
 
+    def restore_skill_levels(self) -> None:
+        """Raise a drained skill by 1 for each minute until it matches its XP level."""
+        now = timezone.now()
+        for skill in self.skills.all():
+            base = skill.level
+            current = base if skill.current_level is None else skill.current_level
+            updated_at = skill.level_updated_at
+            changed = False
+            if updated_at is None:
+                updated_at = now
+                changed = True
+            elif current < base:
+                minutes = int((now - updated_at).total_seconds() // 60)
+                if minutes > 0:
+                    current = min(base, current + minutes)
+                    updated_at = updated_at + timedelta(minutes=minutes)
+                    changed = True
+            if skill.current_level != current or skill.level_updated_at != updated_at:
+                skill.current_level = current
+                skill.level_updated_at = updated_at
+                changed = True
+            if changed:
+                skill.save(update_fields=["current_level", "level_updated_at"])
+
 
 class PlayerSkill(models.Model):
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="skills")
     name = models.CharField(max_length=32, choices=SkillName.choices)
     xp = models.PositiveIntegerField(default=0)
+    # Effective level. Restores by 1 per minute until it matches the XP level.
+    current_level = models.PositiveSmallIntegerField(null=True, blank=True)
+    level_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ("player", "name")

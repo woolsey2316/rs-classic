@@ -23,6 +23,8 @@ class ItemSerializer(serializers.ModelSerializer):
 
 class PlayerSkillSerializer(serializers.ModelSerializer):
     level = serializers.IntegerField(read_only=True)
+    current_level = serializers.IntegerField(read_only=True)
+    level_updated_at = serializers.DateTimeField(read_only=True)
     xp_for_level = serializers.SerializerMethodField()
     xp_for_next = serializers.SerializerMethodField()
     xp_remaining = serializers.SerializerMethodField()
@@ -33,6 +35,8 @@ class PlayerSkillSerializer(serializers.ModelSerializer):
             "name",
             "xp",
             "level",
+            "current_level",
+            "level_updated_at",
             "xp_for_level",
             "xp_for_next",
             "xp_remaining",

@@ -520,17 +520,21 @@ input {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.4rem;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(9, auto);
+  grid-auto-flow: column;
+  gap: 0.25rem 0.4rem;
 }
 
 .skill-row {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: auto auto;
-  gap: 0.15rem 0.5rem;
-  padding: 0.3rem 0.35rem;
+  gap: 0.1rem 0.35rem;
+  padding: 0.25rem 0.3rem;
   background: rgba(0, 0, 0, 0.18);
   border: 1px solid transparent;
+  min-width: 0;
 }
 
 .skill-row:hover {
@@ -538,12 +542,18 @@ input {
 }
 
 .skill-name {
-  font-size: 0.82rem;
+  font-size: 0.72rem;
+  color: #1a120c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-level {
-  font-weight: 600;
-  color: var(--accent-hot);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #1a120c;
+  font-size: 0.75rem;
 }
 
 .skill-bar {
@@ -578,8 +588,14 @@ input {
 }
 
 .rsc-sidebar .skill-row {
-  background: rgb(201, 201, 201);
-  border-color: #000;
+  background: #ece6dc;
+  border-color: #3a2c1c;
+}
+
+.rsc-sidebar .skill-name,
+.rsc-sidebar .skill-level,
+.rsc-sidebar .total-level {
+  color: #140e09;
 }
 
 .rsc-sidebar .skill-bar {
