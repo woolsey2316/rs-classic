@@ -9,6 +9,7 @@ import {
   collectTextureIds,
   loadRscTextures,
 } from "../game/landscapeMeshes";
+import { TICK_MS } from "../game/tick";
 import {
   PLAYER_SPRITE_ANGLES,
   PLAYER_SPRITE_SIZE,
@@ -253,20 +254,39 @@ function updateClickIndicator(indicator, data, animation, now) {
   return true;
 }
 
-function followPlayerWithCamera(view, playerPos) {
-  if (!playerPos || !view?.controls || !view?.camera || !view?.data) return;
-  const { data, controls, camera } = view;
-  const nextTarget = new THREE.Vector3(
-    playerPos.x + 0.5,
-    heightAt(data, playerPos.x, playerPos.z),
-    playerPos.z + 0.5,
-  );
+function smoothStep(t) {
+  const clamped = Math.min(1, Math.max(0, t));
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function followPlayerWithCamera(view, displayPosition) {
+  if (!displayPosition || !view?.controls || !view?.camera) return;
+  const nextTarget = displayPosition.clone();
   if (view.cameraFollowTarget) {
-    const delta = nextTarget.clone().sub(view.cameraFollowTarget);
-    camera.position.add(delta);
+    cameraDelta.subVectors(nextTarget, view.cameraFollowTarget);
+    view.camera.position.add(cameraDelta);
   }
-  controls.target.copy(nextTarget);
+  view.controls.target.copy(nextTarget);
   view.cameraFollowTarget = nextTarget;
+}
+
+const cameraDelta = new THREE.Vector3();
+
+function updatePlayerMotion(view, now) {
+  const motion = view.playerMotion;
+  if (!motion?.goal) return;
+  const { player } = view;
+
+  let shown = motion.goal;
+  if (motion.from && motion.startedAt != null) {
+    const t = smoothStep((now - motion.startedAt) / TICK_MS);
+    motion.display.lerpVectors(motion.from, motion.goal, t);
+    if (t >= 1) motion.from = null;
+    shown = motion.display;
+  }
+  player.position.copy(shown);
+  player.visible = true;
+  followPlayerWithCamera(view, shown);
 }
 
 /**
@@ -548,9 +568,10 @@ export default function Landscape3D({
 
         const render = () => {
           if (disposed) return;
+          const view = viewRef.current;
+          if (view) updatePlayerMotion(view, performance.now());
           controls.update();
           if (player.visible) updatePlayerSprite(player, camera);
-          const view = viewRef.current;
           if (view?.clickIndicator) {
             const active = updateClickIndicator(
               view.clickIndicator,
@@ -593,14 +614,29 @@ export default function Landscape3D({
     if (playerPos) {
       player.visible = true;
       player.userData.facing = playerFacing;
-      player.position.set(
+      const goal = new THREE.Vector3(
         playerPos.x + 0.5,
         heightAt(data, playerPos.x, playerPos.z),
         playerPos.z + 0.5,
       );
-      followPlayerWithCamera(view, playerPos);
+      if (!view.playerMotion) {
+        view.playerMotion = {
+          from: null,
+          goal,
+          display: goal.clone(),
+          startedAt: null,
+        };
+        player.position.copy(goal);
+        followPlayerWithCamera(view, goal);
+      } else if (!view.playerMotion.goal.equals(goal)) {
+        const motion = view.playerMotion;
+        motion.from = motion.display.clone();
+        motion.goal = goal;
+        motion.startedAt = performance.now();
+      }
     } else {
       player.visible = false;
+      view.playerMotion = null;
     }
 
   }, [playerPos, playerFacing, destination, selectedTile, ready]);
