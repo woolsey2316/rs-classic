@@ -370,10 +370,14 @@ export default function GamePage() {
 
   function attackRat(rat) {
     if (!navRef.current || !rat || rat.dead) return;
+    const clientX = rat.clientX;
+    const clientY = rat.clientY;
     const live = ratsStateRef.current.find((entry) => entry.id === rat.id) || rat;
     if (!live || live.dead) return;
     attackSeq.current += 1;
-    setAttackClick({ x: live.x, z: live.z, token: attackSeq.current });
+    if (clientX != null && clientY != null) {
+      setAttackClick({ clientX, clientY, token: attackSeq.current });
+    }
     const engage = () => {
       const current = ratsStateRef.current.find((entry) => entry.id === rat.id) || live;
       if (!current || current.dead) return;
@@ -783,7 +787,7 @@ export default function GamePage() {
     }
   }
 
-  async function onMenuSelect(actionId) {
+  async function onMenuSelect(actionId, event) {
     if (!menu) return;
     const { payload } = menu;
     closeMenu();
@@ -801,7 +805,7 @@ export default function GamePage() {
 
     if (payload.type === "rat") {
       if (actionId === "attack") {
-        attackRat(payload.rat);
+        attackRat({ ...payload.rat, clientX: event?.clientX, clientY: event?.clientY });
       } else if (actionId === "examine") {
         setStatus(RAT_EXAMINE);
       }

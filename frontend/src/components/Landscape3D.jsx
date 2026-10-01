@@ -598,12 +598,28 @@ function updateClickIndicator(indicator, view, animation, now) {
   }
   indicator.sprite.visible = true;
   indicator.sprite.material = indicator.materials[frame + (animation.red ? 4 : 0)];
-  indicator.sprite.position.set(
-    animation.x + 0.5,
-    worldHeight(view, animation.x, animation.z) + 0.14,
-    animation.z + 0.5,
-  );
+  placeClickSprite(indicator.sprite, view.camera, view.canvas, animation.clientX, animation.clientY);
   return true;
+}
+
+const clickNear = new THREE.Vector3();
+const clickFar = new THREE.Vector3();
+
+function placeClickSprite(sprite, camera, canvas, clientX, clientY) {
+  if (!camera || !canvas || clientX == null || clientY == null) return;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
+  clickNear.set(ndcX, ndcY, -1).unproject(camera);
+  clickFar.set(ndcX, ndcY, 1).unproject(camera);
+  clickFar.sub(clickNear).normalize();
+  const distance = 6;
+  sprite.position.copy(camera.position).addScaledVector(clickFar, distance);
+  const fov = (camera.fov * Math.PI) / 180;
+  const visible = 2 * Math.tan(fov / 2) * distance;
+  const size = (16 / rect.height) * visible;
+  sprite.scale.set(size, size, 1);
 }
 
 function smoothStep(t) {
@@ -1051,6 +1067,14 @@ export default function Landscape3D({
           const hit = pickHit(event);
           if (!hit) return;
           if (hit.type === "rat") {
+            if (viewRef.current) {
+              viewRef.current.clickAnim = {
+                startedAt: performance.now(),
+                clientX: event.clientX,
+                clientY: event.clientY,
+                red: true,
+              };
+            }
             handlersRef.current.onRatClick?.(hit.rat);
             return;
           }
@@ -1065,8 +1089,8 @@ export default function Landscape3D({
           if (viewRef.current) {
             viewRef.current.clickAnim = {
               startedAt: performance.now(),
-              x: hit.tile.x,
-              z: hit.tile.z,
+              clientX: event.clientX,
+              clientY: event.clientY,
             };
           }
           handlersRef.current.onTileClick?.(hit.tile);
@@ -1158,6 +1182,7 @@ export default function Landscape3D({
           catalog,
           player,
           camera,
+          canvas: renderer.domElement,
           clickIndicator,
           clickAnim: null,
           controls,
@@ -1244,10 +1269,11 @@ export default function Landscape3D({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !attackClick) return;
+    if (attackClick.clientX == null || attackClick.clientY == null) return;
     view.clickAnim = {
       startedAt: performance.now(),
-      x: attackClick.x,
-      z: attackClick.z,
+      clientX: attackClick.clientX,
+      clientY: attackClick.clientY,
       red: true,
     };
   }, [attackClick, ready]);

@@ -62,9 +62,9 @@ export default function ContextMenu({ x, y, title, items, onSelect, onClose }) {
               role="menuitem"
               className={`context-menu-item ${item.danger ? "danger" : ""}`}
               disabled={item.disabled}
-              onClick={() => {
+              onClick={(event) => {
                 if (item.disabled) return;
-                onSelect?.(item.id);
+                onSelect?.(item.id, event);
               }}
             >
               {item.label}
