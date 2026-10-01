@@ -1,9 +1,49 @@
 /**
- * Helpers for the exported RSC landscape region (`lumbridge-3d.json`).
+ * Helpers for streamed RSC landscape sectors.
  *
- * Tiles are addressed as {x, z} in region-local space: x runs west→east and
- * z runs north→south, matching the vertex grid the 3D terrain is built from.
+ * Tiles are addressed as {x, z} in a fixed world space: x runs west→east and
+ * z runs north→south. Sector columns decrease toward the east. Plane 0's z
+ * equals the RSC game y of that tile.
  */
+
+const SECTOR_SIZE = 48;
+const WORLD_MAX_SECTOR_X = 64;
+const WORLD_MIN_SECTOR_Y = 37;
+
+export function sectorOrigin(sectorX, sectorY) {
+  return {
+    x: (WORLD_MAX_SECTOR_X - sectorX) * SECTOR_SIZE,
+    z: (sectorY - WORLD_MIN_SECTOR_Y) * SECTOR_SIZE,
+  };
+}
+
+export function sectorCoordsAt(x, z) {
+  const tx = Math.floor(x);
+  const tz = Math.floor(z);
+  const sectorX = WORLD_MAX_SECTOR_X - Math.floor(tx / SECTOR_SIZE);
+  const sectorY = WORLD_MIN_SECTOR_Y + Math.floor(tz / SECTOR_SIZE);
+  const origin = sectorOrigin(sectorX, sectorY);
+  return {
+    sectorX,
+    sectorY,
+    localX: tx - origin.x,
+    localZ: tz - origin.z,
+    originX: origin.x,
+    originZ: origin.z,
+  };
+}
+
+/** Sectors within `radius` of the sector containing this world tile. */
+export function sectorsAround(x, z, radius) {
+  const { sectorX, sectorY } = sectorCoordsAt(x, z);
+  const nearby = [];
+  for (let dx = -radius; dx <= radius; dx += 1) {
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      nearby.push({ x: sectorX + dx, y: sectorY + dy });
+    }
+  }
+  return nearby;
+}
 
 const OVERLAY_INFO = {
   0: { name: "Grass", examine: "Soft grass covers the ground." },
@@ -78,8 +118,61 @@ export function buildNavGrid(data, { wallKinds = null, openDoors = null } = {}) 
   return { width, depth, blockedTiles, blockedEdges };
 }
 
+const tileKey = (x, z) => `${x},${z}`;
+
+/**
+ * Walkability across the sectors currently loaded. Tile coordinates are world
+ * tiles, so a window sliding in new sectors does not shift the player.
+ */
+export function buildWorldNav(sectors, { wallKinds = null, openDoors = null } = {}) {
+  const present = new Set();
+  const blocked = new Set();
+  const blockedEdges = new Set();
+
+  for (const sector of sectors || []) {
+    const origin = sectorOrigin(sector.sectorX, sector.sectorY);
+    const { width, depth } = sector;
+    for (let z = 0; z < depth; z += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const wx = origin.x + x;
+        const wz = origin.z + z;
+        present.add(tileKey(wx, wz));
+        if (sector.blocked[z * width + x]) blocked.add(tileKey(wx, wz));
+      }
+    }
+
+    (sector.walls || []).forEach((wall, index) => {
+      const doorId = `${sector.sectorX},${sector.sectorY},${sector.plane}:${index}`;
+      if (openDoors?.has(doorId)) return;
+      const [x1, z1, x2, z2, , wallId] = wall;
+      const kind = wallKinds?.[wallId];
+      if (kind && kind.blocked === false) return;
+      const wx1 = origin.x + x1;
+      const wz1 = origin.z + z1;
+      const wx2 = origin.x + x2;
+      const wz2 = origin.z + z2;
+
+      if (wx1 === wx2) {
+        blockedEdges.add(edgeKey(wx1 - 1, wz1, wx1, wz1));
+      } else if (wz1 === wz2) {
+        blockedEdges.add(edgeKey(wx1, wz1 - 1, wx1, wz1));
+      } else {
+        const tx = Math.min(wx1, wx2);
+        const tz = Math.min(wz1, wz2);
+        blocked.add(tileKey(tx, tz));
+      }
+    });
+  }
+
+  return { world: true, present, blocked, blockedEdges };
+}
+
 export function isWalkable(nav, x, z) {
   if (!nav) return false;
+  if (nav.world) {
+    const key = tileKey(x, z);
+    return nav.present.has(key) && !nav.blocked.has(key);
+  }
   if (x < 0 || z < 0 || x >= nav.width || z >= nav.depth) return false;
   return !nav.blockedTiles[z * nav.width + x];
 }
@@ -114,7 +207,7 @@ export function findLandscapePath(nav, start, goal) {
   if (!isWalkable(nav, goal.x, goal.z)) return [];
   if (start.x === goal.x && start.z === goal.z) return [];
 
-  const key = (x, z) => z * nav.width + x;
+  const key = nav.world ? tileKey : (x, z) => z * nav.width + x;
   const cameFrom = new Map([[key(start.x, start.z), null]]);
   const queue = [{ x: start.x, z: start.z }];
   const dirs = [
@@ -143,9 +236,10 @@ export function findLandscapePath(nav, start, goal) {
     for (const [dx, dz] of dirs) {
       const next = { x: current.x + dx, z: current.z + dz };
       const k = key(next.x, next.z);
-      if (next.x < 0 || next.z < 0 || next.x >= nav.width || next.z >= nav.depth) {
+      if (!nav.world && (next.x < 0 || next.z < 0 || next.x >= nav.width || next.z >= nav.depth)) {
         continue;
       }
+      if (nav.world && !nav.present.has(k)) continue;
       if (cameFrom.has(k) || !canStep(nav, current, next)) continue;
       cameFrom.set(k, current);
       queue.push(next);
@@ -158,50 +252,70 @@ export function findLandscapePath(nav, start, goal) {
 export function tileInfo(data, x, z) {
   const fallback = { name: "Ground", examine: "Just the ground." };
   if (!data) return fallback;
+  if (data.sectors) {
+    const { sectorX, sectorY, localX, localZ } = sectorCoordsAt(x, z);
+    const sector = data.sectors.find(
+      (entry) => entry.sectorX === sectorX && entry.sectorY === sectorY,
+    );
+    if (!sector) return fallback;
+    const overlay = sector.overlays[localZ * sector.width + localX] ?? 0;
+    return OVERLAY_INFO[overlay] || fallback;
+  }
   const overlay = data.overlays[z * data.width + x] ?? 0;
   return OVERLAY_INFO[overlay] || fallback;
 }
 
-/** Convert region-local tile coordinates back to RSC's own world coordinates. */
+/** Convert world tile coordinates to RSC game coordinates. */
 export function toGameCoords(data, x, z) {
-  const bounds = data?.sectorBounds;
-  if (!bounds) return { x, y: z };
-  // Sector columns run east→west, and each sector's tile array is reversed on
-  // the x axis when parsed, so undo both before rebuilding game coordinates.
-  const column = Math.floor(x / 48);
-  const sectorX = bounds.maxX - column;
-  const exportX = x - column * 48;
+  const { sectorX, localX, sectorY, localZ } = sectorCoordsAt(x, z);
+  const plane = data?.sectorBounds?.plane || 0;
   return {
-    x: (47 - exportX) + (sectorX - 48) * 48,
-    y: z + (bounds.minY - 36) * 48 - 48 + (bounds.plane || 0) * 944,
+    x: (47 - localX) + (sectorX - 48) * 48,
+    y: localZ + (sectorY - 36) * 48 - 48 + plane * 944,
   };
 }
 
-/** Map RSC world coordinates onto the loaded region, or null if off-map. */
+/** Map RSC world coordinates onto the fixed world tile grid. */
 export function fromGameCoords(data, gameX, gameY) {
-  const bounds = data?.sectorBounds;
-  if (!bounds) return null;
+  const plane = data?.sectorBounds?.plane || 0;
+  const yOnPlane = gameY - plane * 944;
   const sectorX = Math.floor(gameX / 48) + 48;
   const tileX = ((gameX % 48) + 48) % 48;
-  const localX = (bounds.maxX - sectorX) * 48 + (47 - tileX);
-
-  const yOnPlane = gameY - (bounds.plane || 0) * 944;
   const sectorY = Math.floor(yOnPlane / 48) + 37;
   const tileZ = ((yOnPlane % 48) + 48) % 48;
-  const localZ = (sectorY - bounds.minY) * 48 + tileZ;
-
-  if (
-    localX < 0 ||
-    localZ < 0 ||
-    localX >= data.width ||
-    localZ >= data.depth
-  ) {
-    return null;
-  }
-  return { x: localX, z: localZ };
+  const origin = sectorOrigin(sectorX, sectorY);
+  return {
+    x: origin.x + (47 - tileX),
+    z: origin.z + tileZ,
+  };
 }
 
-/** Inclusive RSC world-coordinate bbox covered by the loaded region. */
+/** Inclusive RSC world-coordinate bbox covering the loaded sectors. */
+export function sectorsGameBounds(sectors, plane = 0) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const sector of sectors || []) {
+    const origin = sectorOrigin(sector.sectorX, sector.sectorY);
+    for (const corner of [
+      [origin.x, origin.z],
+      [origin.x + sector.width - 1, origin.z + sector.depth - 1],
+    ]) {
+      const game = toGameCoords({ sectorBounds: { plane } }, corner[0], corner[1]);
+      minX = Math.min(minX, game.x);
+      maxX = Math.max(maxX, game.x);
+      minY = Math.min(minY, game.y);
+      maxY = Math.max(maxY, game.y);
+    }
+  }
+  if (!Number.isFinite(minX)) {
+    return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+/** Inclusive RSC world-coordinate bbox covered by a single exported region. */
 export function regionGameBounds(data) {
   const bounds = data?.sectorBounds;
   if (!bounds) {
@@ -261,6 +375,25 @@ export function isNearScenery(pos, kind, origin, direction) {
 /** Copy a nav grid and mark tiles occupied by blocking scenery. */
 export function applySceneryBlocking(nav, land, scenery) {
   if (!nav || !land || !scenery?.objects?.length) return nav;
+  if (nav.world) {
+    const blocked = new Set(nav.blocked);
+    const kinds = new Map((scenery.kinds || []).map((kind) => [kind.rsc_id, kind]));
+    for (const object of scenery.objects) {
+      const kind = kinds.get(object.kind);
+      if (!sceneryBlocksTile(kind)) continue;
+      const origin = fromGameCoords(land, object.x, object.y);
+      if (!origin) continue;
+      const { width, height } = sceneryOccupies(kind, object.direction);
+      for (let dx = 0; dx < width; dx += 1) {
+        for (let dz = 0; dz < height; dz += 1) {
+          const x = origin.x + dx;
+          const z = origin.z + dz;
+          if (nav.present.has(tileKey(x, z))) blocked.add(tileKey(x, z));
+        }
+      }
+    }
+    return { ...nav, blocked };
+  }
   const blockedTiles = nav.blockedTiles.slice();
   const next = { ...nav, blockedTiles };
   const kinds = new Map((scenery.kinds || []).map((kind) => [kind.rsc_id, kind]));

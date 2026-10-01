@@ -9,13 +9,13 @@ import SkillsPanel from "../components/SkillsPanel";
 import TreasureChestPanel from "../components/TreasureChestPanel";
 import {
   applySceneryBlocking,
-  buildNavGrid,
+  buildWorldNav,
   findLandscapePath,
   isAdjacentTile,
   isNearScenery,
   isWalkable,
   nearestWalkable,
-  regionGameBounds,
+  sectorsGameBounds,
   tileInfo,
   toGameCoords,
   fromGameCoords,
@@ -39,6 +39,7 @@ function isTreasureChest(placement) {
 export default function GamePage() {
   const { player, setPlayer, logout } = useAuth();
   const [land, setLand] = useState(null);
+  const [sectors, setSectors] = useState([]);
   const [scenery, setScenery] = useState(null);
   const [wallKinds, setWallKinds] = useState(null);
   const [openDoors, setOpenDoors] = useState([]);
@@ -61,8 +62,8 @@ export default function GamePage() {
   const openDoorSet = useMemo(() => new Set(openDoors), [openDoors]);
 
   const baseNav = useMemo(
-    () => (land ? buildNavGrid(land, { wallKinds, openDoors: openDoorSet }) : null),
-    [land, wallKinds, openDoorSet],
+    () => (sectors.length ? buildWorldNav(sectors, { wallKinds, openDoors: openDoorSet }) : null),
+    [sectors, wallKinds, openDoorSet],
   );
   const nav = useMemo(
     () => applySceneryBlocking(baseNav, land, scenery),
@@ -89,17 +90,29 @@ export default function GamePage() {
     ratsStateRef.current = rats;
   }, [rats]);
 
-  const onLandscapeLoad = useCallback((data) => {
-    setLand(data);
+  const ratsStarted = useRef(false);
+
+  const onLandscapeLoad = useCallback((catalog) => {
+    setLand({
+      ...catalog,
+      sectorBounds: { plane: 0 },
+    });
   }, []);
 
+  const onSectors = useCallback((loaded) => {
+    setSectors(loaded);
+  }, []);
+
+  const ratsReady = Boolean(land && nav);
+
   useEffect(() => {
-    if (!land || !navRef.current) return undefined;
+    if (!ratsReady || ratsStarted.current) return undefined;
     const home = fromGameCoords(land, RAT_HOME.x, RAT_HOME.y);
     if (!home) return undefined;
-    const spot = nearestWalkable(navRef.current, home, 6) || home;
+    const spot = nearestWalkable(nav, home, 6) || home;
+    ratsStarted.current = true;
     ratHomeRef.current = spot;
-    setRats(spawnRats(navRef.current, spot));
+    setRats(spawnRats(nav, spot));
     const timer = setInterval(() => {
       const grid = navRef.current;
       const origin = ratHomeRef.current;
@@ -111,7 +124,7 @@ export default function GamePage() {
       });
     }, TICK_MS);
     return () => clearInterval(timer);
-  }, [land]);
+  }, [ratsReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,15 +142,15 @@ export default function GamePage() {
   useEffect(() => {
     if (!nav || !land || posRef.current) return;
     const spawn = nearestWalkable(nav, {
-      x: land.spawn?.x ?? Math.floor(land.width / 2),
-      z: land.spawn?.z ?? Math.floor(land.depth / 2),
+      x: land.spawn?.x ?? 0,
+      z: land.spawn?.z ?? 0,
     });
     if (spawn) setPos(spawn);
   }, [nav, land]);
 
   useEffect(() => {
-    if (!land) return undefined;
-    const bounds = regionGameBounds(land);
+    if (!sectors.length) return undefined;
+    const bounds = sectorsGameBounds(sectors);
     let cancelled = false;
     fetchScenery(bounds)
       .then((data) => {
@@ -149,7 +162,7 @@ export default function GamePage() {
     return () => {
       cancelled = true;
     };
-  }, [land]);
+  }, [sectors]);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -394,7 +407,7 @@ export default function GamePage() {
       return;
     }
     const { tile, screen } = hit;
-    const info = tileInfo(land, tile.x, tile.z);
+    const info = tileInfo({ sectors }, tile.x, tile.z);
     const items = [];
 
     if (isWalkable(nav, tile.x, tile.z)) {
@@ -879,6 +892,7 @@ export default function GamePage() {
         hitsplats={hitsplats}
         playerFighting={playerFighting}
         onLoad={onLandscapeLoad}
+        onSectors={onSectors}
         onTileClick={onTileClick}
         onTileContextMenu={onTileContextMenu}
         onSceneryClick={onSceneryClick}

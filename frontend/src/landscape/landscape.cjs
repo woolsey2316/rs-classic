@@ -40,26 +40,19 @@ function tileColour(tile) {
     return tile.getTerrainColour();
 }
 
-// Export a 3x3-sector, 144x144-tile region around Lumbridge. Keeping the
-// browser payload regional makes it fast; the same format can later be emitted
-// per sector for streaming the whole RSC world.
-function export3dRegion({
-    minSectorX = 49,
-    maxSectorX = 51,
-    minSectorY = 49,
-    maxSectorY = 51,
-    plane = 0
-} = {}) {
-    const sectorSize = 48;
-    const width = (maxSectorX - minSectorX + 1) * sectorSize;
-    const depth = (maxSectorY - minSectorY + 1) * sectorSize;
+const SECTOR_SIZE = 48;
+// Highest sector index is west. Tile columns inside a sector are already mirrored.
+const WORLD_MAX_SECTOR_X = 64;
+const WORLD_MIN_SECTOR_Y = 37;
+
+function exportSector(sector) {
     const palette = [];
     const paletteIndexes = new Map();
-    const heights = new Array(width * depth).fill(0);
-    const colours = new Array(width * depth).fill(0);
-    const blocked = new Array(width * depth).fill(1);
-    const overlays = new Array(width * depth).fill(0);
-    const roofs = new Array(width * depth).fill(0);
+    const heights = new Array(SECTOR_SIZE * SECTOR_SIZE).fill(0);
+    const colours = new Array(SECTOR_SIZE * SECTOR_SIZE).fill(0);
+    const blocked = new Array(SECTOR_SIZE * SECTOR_SIZE).fill(1);
+    const overlays = new Array(SECTOR_SIZE * SECTOR_SIZE).fill(0);
+    const roofs = new Array(SECTOR_SIZE * SECTOR_SIZE).fill(0);
     const walls = [];
 
     function paletteIndex(css) {
@@ -70,86 +63,99 @@ function export3dRegion({
         return paletteIndexes.get(css);
     }
 
-    for (let sectorX = minSectorX; sectorX <= maxSectorX; sectorX += 1) {
-        for (let sectorY = minSectorY; sectorY <= maxSectorY; sectorY += 1) {
-            const sector = landscape.sectors[sectorX][sectorY][plane];
-            if (!sector) continue;
+    for (let x = 0; x < SECTOR_SIZE; x += 1) {
+        for (let z = 0; z < SECTOR_SIZE; z += 1) {
+            const tile = sector.tiles[x][z];
+            const index = z * SECTOR_SIZE + x;
+            const definition = tile.getTileDef();
 
-            // RSC's sector x axis points west (sectors[x - 1] is the eastern
-            // neighbour), so lay the columns out in descending sector order to
-            // keep west on the left, the way the game's own map is drawn.
-            const offsetX = (maxSectorX - sectorX) * sectorSize;
-            const offsetZ = (sectorY - minSectorY) * sectorSize;
+            heights[index] = tile.elevation;
+            colours[index] = paletteIndex(tileColour(tile));
+            overlays[index] = tile.overlay;
+            roofs[index] = tile.wall.roof || 0;
+            blocked[index] = definition.blocked ? 1 : 0;
 
-            for (let x = 0; x < sectorSize; x += 1) {
-                for (let z = 0; z < sectorSize; z += 1) {
-                    const tile = sector.tiles[x][z];
-                    const worldX = offsetX + x;
-                    const worldZ = offsetZ + z;
-                    const index = worldZ * width + worldX;
-                    const definition = tile.getTileDef();
-
-                    heights[index] = tile.elevation;
-                    colours[index] = paletteIndex(tileColour(tile));
-                    overlays[index] = tile.overlay;
-                    roofs[index] = tile.wall.roof || 0;
-                    blocked[index] = definition.blocked ? 1 : 0;
-
-                    // Wall IDs are 1-based indexes into config.wallObjects.
-                    if (tile.wall.vertical) {
-                        walls.push([
-                            worldX + 1, worldZ, worldX + 1, worldZ + 1,
-                            tile.elevation, tile.wall.vertical
-                        ]);
-                    }
-                    if (tile.wall.horizontal) {
-                        walls.push([
-                            worldX, worldZ, worldX + 1, worldZ,
-                            tile.elevation, tile.wall.horizontal
-                        ]);
-                    }
-                    if (tile.wall.diagonal) {
-                        const slash = tile.wall.diagonal.direction === '/';
-                        walls.push(slash
-                            ? [worldX, worldZ + 1, worldX + 1, worldZ, tile.elevation, tile.wall.diagonal.overlay]
-                            : [worldX, worldZ, worldX + 1, worldZ + 1, tile.elevation, tile.wall.diagonal.overlay]);
-                    }
-                }
+            if (tile.wall.vertical) {
+                walls.push([
+                    x + 1, z, x + 1, z + 1,
+                    tile.elevation, tile.wall.vertical
+                ]);
+            }
+            if (tile.wall.horizontal) {
+                walls.push([
+                    x, z, x + 1, z,
+                    tile.elevation, tile.wall.horizontal
+                ]);
+            }
+            if (tile.wall.diagonal) {
+                const slash = tile.wall.diagonal.direction === '/';
+                walls.push(slash
+                    ? [x, z + 1, x + 1, z, tile.elevation, tile.wall.diagonal.overlay]
+                    : [x, z, x + 1, z + 1, tile.elevation, tile.wall.diagonal.overlay]);
             }
         }
     }
 
     return {
-        name: 'Lumbridge and surrounding region',
         format: 1,
-        width,
-        depth,
+        sectorX: sector.x,
+        sectorY: sector.y,
+        plane: sector.plane,
+        width: SECTOR_SIZE,
+        depth: SECTOR_SIZE,
         tileSize: 1,
         heightScale: 0.035,
-        sectorBounds: {
-            minX: minSectorX,
-            maxX: maxSectorX,
-            minY: minSectorY,
-            maxY: maxSectorY,
-            plane
-        },
         palette,
         heights,
         colours,
         blocked,
         overlays,
         roofs,
-        walls,
-        spawn: {
-            // Lumbridge castle courtyard, relative to this exported region.
-            x: 71,
-            z: 72
-        }
+        walls
     };
 }
 
-const publicDirectory = path.resolve(__dirname, '../../public/landscape');
+function worldFromGame(gameX, gameY) {
+    const sectorX = Math.floor(gameX / SECTOR_SIZE) + 48;
+    const tileX = ((gameX % SECTOR_SIZE) + SECTOR_SIZE) % SECTOR_SIZE;
+    const sectorY = Math.floor(gameY / SECTOR_SIZE) + 37;
+    const tileZ = ((gameY % SECTOR_SIZE) + SECTOR_SIZE) % SECTOR_SIZE;
+    return {
+        x: (WORLD_MAX_SECTOR_X - sectorX) * SECTOR_SIZE + (47 - tileX),
+        z: (sectorY - WORLD_MIN_SECTOR_Y) * SECTOR_SIZE + tileZ
+    };
+}
+
+const publicDirectory = path.resolve(__dirname, '../../public/landscape/sectors');
 fs.mkdirSync(publicDirectory, { recursive: true });
-const output = path.join(publicDirectory, 'lumbridge-3d.json');
-fs.writeFileSync(output, JSON.stringify(export3dRegion()));
-console.log(`Wrote ${output}`);
+
+const listed = [];
+for (let plane = 0; plane < landscape.depth; plane += 1) {
+    for (let sectorY = landscape.minRegionY; sectorY <= landscape.maxRegionY; sectorY += 1) {
+        for (let sectorX = landscape.minRegionX; sectorX <= landscape.maxRegionX; sectorX += 1) {
+            const sector = landscape.sectors[sectorX][sectorY][plane];
+            if (!sector || sector.empty) continue;
+            const directory = path.join(publicDirectory, String(plane), String(sectorX));
+            fs.mkdirSync(directory, { recursive: true });
+            fs.writeFileSync(
+                path.join(directory, `${sectorY}.json`),
+                JSON.stringify(exportSector(sector))
+            );
+            listed.push({ x: sectorX, y: sectorY, plane });
+        }
+    }
+}
+
+const index = {
+    name: 'RuneScape Classic',
+    sectorSize: SECTOR_SIZE,
+    maxSectorX: WORLD_MAX_SECTOR_X,
+    minSectorY: WORLD_MIN_SECTOR_Y,
+    minRegionX: landscape.minRegionX,
+    // Lumbridge castle courtyard.
+    spawn: worldFromGame(120, 648),
+    sectors: listed
+};
+const indexPath = path.join(publicDirectory, 'index.json');
+fs.writeFileSync(indexPath, JSON.stringify(index));
+console.log(`Wrote ${listed.length} sectors to ${publicDirectory}`);

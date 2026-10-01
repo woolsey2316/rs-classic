@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { fromGameCoords } from "../game/landscapeGrid";
+import { fromGameCoords, sectorCoordsAt, sectorOrigin, sectorsAround } from "../game/landscapeGrid";
 import {
   buildDoorMeshes,
   buildFloorMeshes,
@@ -120,6 +120,21 @@ function addMeshes(scene, resources, meshes) {
 }
 
 const PLAYER_HEIGHT = 1.35;
+const SECTOR_RADIUS = 2;
+
+function sectorKey(plane, x, y) {
+  return `${x},${y},${plane}`;
+}
+
+function worldHeight(view, x, z) {
+  const coords = sectorCoordsAt(x, z);
+  const record = view?.mounted?.get(sectorKey(0, coords.sectorX, coords.sectorY));
+  if (!record) return 0;
+  const { data } = record;
+  const lx = Math.max(0, Math.min(data.width - 1, coords.localX));
+  const lz = Math.max(0, Math.min(data.depth - 1, coords.localZ));
+  return data.heights[lz * data.width + lx] * data.heightScale;
+}
 
 const walkUniforms = {
   uTime: { value: 0 },
@@ -313,7 +328,7 @@ function updateRats(view, rats, now) {
       });
     }
     const motion = motions.get(rat.id);
-    const y = heightAt(view.data, rat.x, rat.z);
+    const y = worldHeight(view, rat.x, rat.z);
     if (motion.goal.x !== rat.x || motion.goal.z !== rat.z) {
       motion.from = motion.display.clone();
       motion.goal = { x: rat.x, z: rat.z };
@@ -521,7 +536,7 @@ function makeClickIndicator(textures) {
   return { sprite, materials };
 }
 
-function updateClickIndicator(indicator, data, animation, now) {
+function updateClickIndicator(indicator, view, animation, now) {
   if (!indicator || !animation) {
     if (indicator) indicator.sprite.visible = false;
     return false;
@@ -535,7 +550,7 @@ function updateClickIndicator(indicator, data, animation, now) {
   indicator.sprite.material = indicator.materials[frame + (animation.red ? 4 : 0)];
   indicator.sprite.position.set(
     animation.x + 0.5,
-    heightAt(data, animation.x, animation.z) + 0.14,
+    worldHeight(view, animation.x, animation.z) + 0.14,
     animation.z + 0.5,
   );
   return true;
@@ -598,6 +613,127 @@ function updateNearbyRoofs(view, x, z) {
   }
 }
 
+function localOpenDoors(openDoors, data) {
+  const prefix = `${data.sectorX},${data.sectorY},${data.plane}:`;
+  const local = new Set();
+  for (const id of openDoors || []) {
+    const value = String(id);
+    if (value.startsWith(prefix)) local.add(Number(value.slice(prefix.length)));
+  }
+  return local;
+}
+
+function disposeDrawn(object) {
+  object.traverse((child) => {
+    child.geometry?.dispose();
+    if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose());
+    else if (child.material && child.material.isMaterial) child.material.dispose();
+  });
+}
+
+function attachSectorDoors(view, record) {
+  record.doors = [];
+  const open = localOpenDoors(view.openDoors, record.data);
+  for (const mesh of buildDoorMeshes(record.data, view.defs, view.rscTextures, open)) {
+    mesh.position.set(record.origin.x, 0, record.origin.z);
+    mesh.userData.door.index = `${record.data.sectorX},${record.data.sectorY},${record.data.plane}:${mesh.userData.door.index}`;
+    view.doorsGroup.add(mesh);
+    record.doors.push(mesh);
+  }
+}
+
+function mountSector(view, data) {
+  const key = sectorKey(data.plane ?? 0, data.sectorX, data.sectorY);
+  if (view.mounted.has(key)) return;
+  const origin = sectorOrigin(data.sectorX, data.sectorY);
+  const group = new THREE.Group();
+  group.name = `sector-${key}`;
+  group.position.set(origin.x, 0, origin.z);
+
+  const terrain = new THREE.Mesh(
+    buildTerrain(data),
+    new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+  );
+  terrain.userData.terrain = true;
+  group.add(terrain);
+  for (const mesh of buildWallMeshes(data, view.defs, view.rscTextures)) group.add(mesh);
+  for (const mesh of buildFloorMeshes(data, view.defs, view.rscTextures)) group.add(mesh);
+  const roofs = buildRoofMeshes(data, view.defs, view.rscTextures, heightAt);
+  for (const mesh of roofs) {
+    mesh.userData.roofTiles = (mesh.userData.roofTiles || []).map((tile) => ({
+      x: tile.x + origin.x,
+      z: tile.z + origin.z,
+    }));
+    group.add(mesh);
+    view.roofs.push(mesh);
+  }
+  view.sectorRoot.add(group);
+  const record = { key, data, origin, group, roofs, doors: [] };
+  view.mounted.set(key, record);
+  attachSectorDoors(view, record);
+}
+
+function unmountSector(view, key) {
+  const record = view.mounted.get(key);
+  if (!record) return;
+  for (const mesh of record.doors || []) {
+    mesh.geometry?.dispose();
+    mesh.material?.dispose();
+    view.doorsGroup.remove(mesh);
+  }
+  view.roofs = view.roofs.filter((mesh) => !record.roofs.includes(mesh));
+  view.sectorRoot.remove(record.group);
+  disposeDrawn(record.group);
+  view.mounted.delete(key);
+}
+
+async function ensureSectorTextures(view, data) {
+  const missing = collectTextureIds(data, view.defs).filter((id) => !view.rscTextures.has(id));
+  if (!missing.length) return;
+  const loaded = await loadRscTextures(missing);
+  for (const [id, texture] of loaded) view.rscTextures.set(id, texture);
+}
+
+async function syncSectors(view, x, z) {
+  if (!view?.index) return;
+  const wanted = sectorsAround(x, z, SECTOR_RADIUS).filter((sector) =>
+    view.index.has(sectorKey(0, sector.x, sector.y)),
+  );
+  const wantedKeys = new Set(wanted.map((sector) => sectorKey(0, sector.x, sector.y)));
+  const wantedSignature = [...wantedKeys].sort().join("|");
+  if (wantedSignature === view.wantedSignature) return;
+  view.wantedSignature = wantedSignature;
+  const generation = (view.sectorGen || 0) + 1;
+  view.sectorGen = generation;
+  for (const key of [...view.mounted.keys()]) {
+    if (!wantedKeys.has(key)) unmountSector(view, key);
+  }
+  for (const sector of wanted) {
+    const key = sectorKey(0, sector.x, sector.y);
+    if (view.mounted.has(key)) continue;
+    const response = await fetch(`/landscape/sectors/0/${sector.x}/${sector.y}.json`);
+    if (view.sectorGen !== generation) return;
+    if (!response.ok) continue;
+    const data = await response.json();
+    await ensureSectorTextures(view, data);
+    if (view.sectorGen !== generation) return;
+    mountSector(view, data);
+  }
+  if (view.sectorGen !== generation) return;
+  const loaded = [...view.mounted.values()].map((record) => record.data);
+  handlersRefLoaded(view, loaded);
+}
+
+function handlersRefLoaded(view, loaded) {
+  const signature = loaded
+    .map((sector) => sectorKey(sector.plane ?? 0, sector.sectorX, sector.sectorY))
+    .sort()
+    .join("|");
+  if (signature === view.sectorSignature) return;
+  view.sectorSignature = signature;
+  view.notifySectors?.(loaded);
+}
+
 /**
  * Renders the exported RSC region. Pointer events are resolved by raycasting
  * scenery first, then the terrain mesh. Tile callbacks receive landscape
@@ -605,7 +741,7 @@ function updateNearbyRoofs(view, x, z) {
  * tile. `screen` is passed so callers can position a menu at the cursor.
  */
 export default function Landscape3D({
-  src = "/landscape/lumbridge-3d.json",
+  src = "/landscape/sectors/index.json",
   playerPos = null,
   playerFacing = { x: 0, z: 1 },
   destination = null,
@@ -618,6 +754,7 @@ export default function Landscape3D({
   playerFighting = false,
   attackClick = null,
   onHover,
+  onSectors,
   onLoad,
   onTileClick,
   onTileContextMenu,
@@ -651,6 +788,7 @@ export default function Landscape3D({
     onRatClick,
     onRatContextMenu,
     onHover,
+    onSectors,
   };
 
   useEffect(() => {
@@ -666,12 +804,12 @@ export default function Landscape3D({
 
     async function start() {
       try {
-        const [landResponse, defsResponse] = await Promise.all([
+        const [indexResponse, defsResponse] = await Promise.all([
           fetch(src),
           fetch("/landscape/defs.json"),
         ]);
-        if (!landResponse.ok) throw new Error(`Landscape request failed (${landResponse.status})`);
-        const data = await landResponse.json();
+        if (!indexResponse.ok) throw new Error(`Landscape request failed (${indexResponse.status})`);
+        const catalog = await indexResponse.json();
         const defs = defsResponse.ok ? await defsResponse.json() : null;
         if (disposed) return;
 
@@ -680,8 +818,8 @@ export default function Landscape3D({
         scene.fog = new THREE.Fog(0x8bb9d9, 150, 300);
 
         const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 500);
-        const spawnX = data.spawn?.x ?? data.width / 2;
-        const spawnZ = data.spawn?.z ?? data.depth / 2;
+        const spawnX = catalog.spawn?.x ?? 0;
+        const spawnZ = catalog.spawn?.z ?? 0;
         camera.position.set(spawnX + 58, 88, spawnZ + 72);
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -692,62 +830,29 @@ export default function Landscape3D({
         host.replaceChildren(renderer.domElement);
 
         controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(
-          spawnX,
-          heightAt(data, Math.floor(spawnX), Math.floor(spawnZ)),
-          spawnZ,
-        );
+        controls.target.set(spawnX, 0, spawnZ);
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
         controls.minDistance = 4;
-        controls.maxDistance = 180;
+        controls.maxDistance = 96;
         controls.maxPolarAngle = Math.PI * 0.48;
         controls.update();
 
-        const terrainGeometry = buildTerrain(data);
-        const terrainMaterial = new THREE.MeshBasicMaterial({
-          vertexColors: true,
-          side: THREE.DoubleSide,
-        });
-        const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
-        terrain.receiveShadow = true;
-        scene.add(terrain);
-        resources.push(terrainGeometry, terrainMaterial);
+        const sectorRoot = new THREE.Group();
+        sectorRoot.name = "sectors";
+        scene.add(sectorRoot);
 
         const playerTexturesPromise = loadPlayerTextures();
         const clickIconTexturesPromise = loadClickIconTextures();
         const ratTexturesPromise = loadRatTextures();
         const splatImagesPromise = loadSplatImages();
-        const rscTexturesPromise = defs
-          ? loadRscTextures(collectTextureIds(data, defs))
-          : Promise.resolve(new Map());
-        const [playerTextures, clickIconTextures, rscTextures, ratTextures, splatImages] =
-          await Promise.all([
-            playerTexturesPromise,
-            clickIconTexturesPromise,
-            rscTexturesPromise,
-            ratTexturesPromise,
-            splatImagesPromise,
-          ]);
+        const [playerTextures, clickIconTextures, ratTextures, splatImages] = await Promise.all([
+          playerTexturesPromise,
+          clickIconTexturesPromise,
+          ratTexturesPromise,
+          splatImagesPromise,
+        ]);
         if (disposed) return;
-
-        let roofMeshes = [];
-        if (defs && rscTextures.size) {
-          addMeshes(scene, resources, buildWallMeshes(data, defs, rscTextures));
-          addMeshes(scene, resources, buildFloorMeshes(data, defs, rscTextures));
-          roofMeshes = buildRoofMeshes(data, defs, rscTextures, heightAt);
-          addMeshes(scene, resources, roofMeshes);
-          rscTextures.forEach((texture) => resources.push(texture));
-        } else {
-          const wallGeometry = buildWalls(data);
-          const wallMaterial = new THREE.LineBasicMaterial({
-            color: 0x4d463f,
-            transparent: true,
-            opacity: 0.9,
-          });
-          scene.add(new THREE.LineSegments(wallGeometry, wallMaterial));
-          resources.push(wallGeometry, wallMaterial);
-        }
 
         const player = makePlayerMarker(playerTextures);
         player.visible = false;
@@ -823,13 +928,14 @@ export default function Landscape3D({
             }
           }
 
-          const hit = raycaster.intersectObject(terrain, false)[0];
+          const hits = raycaster.intersectObject(sectorRoot, true);
+          const hit = hits.find((entry) => entry.object.userData?.terrain);
           if (!hit) return null;
           return {
             type: "tile",
             tile: {
-              x: Math.max(0, Math.min(data.width - 1, Math.floor(hit.point.x))),
-              z: Math.max(0, Math.min(data.depth - 1, Math.floor(hit.point.z))),
+              x: Math.floor(hit.point.x),
+              z: Math.floor(hit.point.z),
             },
             screen,
           };
@@ -957,7 +1063,7 @@ export default function Landscape3D({
         resources.push({ dispose: () => resizeObserver.disconnect() });
 
         viewRef.current = {
-          data,
+          catalog,
           player,
           camera,
           clickIndicator,
@@ -967,6 +1073,15 @@ export default function Landscape3D({
           sceneryGroup,
           sceneryKit,
           doorsGroup,
+          sectorRoot,
+          mounted: new Map(),
+          index: new Set(
+            (catalog.sectors || [])
+              .filter((sector) => sector.plane === 0)
+              .map((sector) => sectorKey(0, sector.x, sector.y)),
+          ),
+          sectorGen: 0,
+          sectorSignature: "",
           ratsGroup,
           ratTextures,
           ratFightFlip: ratTextures.map((texture, index) =>
@@ -975,13 +1090,19 @@ export default function Landscape3D({
           splatGroup,
           splatImages,
           defs,
-          rscTextures,
-          roofs: roofMeshes,
+          rscTextures: new Map(),
+          roofs: [],
+          openDoors,
         };
+        viewRef.current.notifySectors = (loaded) => handlersRef.current.onSectors?.(loaded);
+
+        await syncSectors(viewRef.current, spawnX, spawnZ);
+        if (disposed) return;
+        controls.target.y = worldHeight(viewRef.current, spawnX, spawnZ);
 
         setMessage("");
         setReady((value) => value + 1);
-        handlersRef.current.onLoad?.(data);
+        handlersRef.current.onLoad?.(catalog);
 
         const render = () => {
           if (disposed) return;
@@ -997,7 +1118,7 @@ export default function Landscape3D({
           if (view?.clickIndicator) {
             const active = updateClickIndicator(
               view.clickIndicator,
-              data,
+              view,
               view.clickAnim,
               performance.now(),
             );
@@ -1041,18 +1162,23 @@ export default function Landscape3D({
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view?.doorsGroup || !view.defs || !view.rscTextures) return;
-    const { doorsGroup, data, defs, rscTextures } = view;
-    for (const child of [...doorsGroup.children]) {
-      child.geometry?.dispose();
-      child.material?.dispose();
-      doorsGroup.remove(child);
-    }
-    const open = openDoors instanceof Set ? openDoors : new Set(openDoors || []);
-    for (const mesh of buildDoorMeshes(data, defs, rscTextures, open)) {
-      doorsGroup.add(mesh);
+    if (!view?.doorsGroup || !view.mounted) return;
+    view.openDoors = openDoors instanceof Set ? openDoors : new Set(openDoors || []);
+    for (const record of view.mounted.values()) {
+      for (const mesh of record.doors || []) {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+        view.doorsGroup.remove(mesh);
+      }
+      attachSectorDoors(view, record);
     }
   }, [openDoors, ready]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!ready || !view || !playerPos) return;
+    syncSectors(view, playerPos.x, playerPos.z).catch(() => {});
+  }, [playerPos, ready]);
 
   const equipmentKey = equipmentIds.join(",");
 
@@ -1074,14 +1200,15 @@ export default function Landscape3D({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const { data, player, destinationMarker, selectionMarker } = view;
+    const { player } = view;
+    if (!player) return;
 
     if (playerPos) {
       player.visible = true;
       player.userData.facing = playerFacing;
       const goal = new THREE.Vector3(
         playerPos.x + 0.5,
-        heightAt(data, playerPos.x, playerPos.z),
+        worldHeight(view, playerPos.x, playerPos.z),
         playerPos.z + 0.5,
       );
       if (!view.playerMotion) {
@@ -1112,7 +1239,7 @@ export default function Landscape3D({
   useEffect(() => {
     const view = viewRef.current;
     if (!view?.sceneryGroup || !view.sceneryKit) return;
-    const { data, sceneryGroup, sceneryKit } = view;
+    const { sceneryGroup, sceneryKit, catalog } = view;
     sceneryGroup.clear();
     if (!scenery?.objects?.length) return;
 
@@ -1120,12 +1247,12 @@ export default function Landscape3D({
     for (const object of scenery.objects) {
       const kind = kinds.get(object.kind);
       if (!kind) continue;
-      const tile = fromGameCoords(data, object.x, object.y);
+      const tile = fromGameCoords(catalog, object.x, object.y);
       if (!tile) continue;
       const mesh = makeSceneryMesh(sceneryKit, kind, object);
       mesh.position.set(
         tile.x + 0.5,
-        heightAt(data, tile.x, tile.z),
+        worldHeight(view, tile.x, tile.z),
         tile.z + 0.5,
       );
       mesh.rotation.y = (object.direction || 0) * (Math.PI / 4);
