@@ -4,6 +4,22 @@ function colour(hex) {
   return new THREE.MeshLambertMaterial({ color: hex });
 }
 
+function treeTexture(name) {
+  const texture = new THREE.TextureLoader().load(`/sprites/rsc/textures/${name}/0.png`);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function foliage(map) {
+  return new THREE.MeshLambertMaterial({
+    map,
+    color: 0xffffff,
+    side: THREE.DoubleSide,
+  });
+}
+
 function mesh(geometry, material, x, y, z, sx = 1, sy = 1, sz = 1) {
   const part = new THREE.Mesh(geometry, material);
   part.position.set(x, y, z);
@@ -56,6 +72,11 @@ export function createSceneryKit() {
     grave: colour(0x8a8680),
     generic: colour(0x8a7048),
     door: colour(0x6a4224),
+    leafMap: foliage(treeTexture("leafytree")),
+    mapleMap: foliage(treeTexture("mapletree")),
+    yewMap: foliage(treeTexture("yewtree")),
+    deadMap: foliage(treeTexture("deadtree")),
+    stumpMap: foliage(treeTexture("treestump")),
   };
 
   return {
@@ -63,7 +84,10 @@ export function createSceneryKit() {
     mats,
     dispose() {
       Object.values(geos).forEach((geo) => geo.dispose());
-      Object.values(mats).forEach((mat) => mat.dispose());
+      Object.values(mats).forEach((mat) => {
+        mat.map?.dispose();
+        mat.dispose();
+      });
     },
   };
 }
@@ -74,6 +98,8 @@ function styleFor(kind) {
   const hay = `${name} ${model}`;
   if (model.includes("palm") || name.includes("palm")) return "palm";
   if (model.includes("deadtree") || hay.includes("dead")) return "dead-tree";
+  if (model.includes("yew")) return "yew-tree";
+  if (model.includes("maple")) return "maple-tree";
   if (model.includes("tree2") || (name === "tree" && model.includes("tree2"))) return "pointy-tree";
   if (model.includes("treestump") || hay.includes("stump")) return "stump";
   if (name === "tree" || model.includes("tree")) return "leafy-tree";
@@ -136,14 +162,24 @@ function makeStyle(kit, style, objectId) {
     case "pointy-tree":
       return assemble(kit, [
         mesh(geos.cylinder, mats.bark, 0, 0.55 * s, 0, 0.22 * s, 1.1 * s, 0.22 * s),
-        mesh(geos.cone, mats.leafDark, 0, 1.55 * s, 0, 1.15 * s, 1.7 * s, 1.15 * s),
-        mesh(geos.cone, mats.leaf, 0, 2.15 * s, 0, 0.75 * s, 1.2 * s, 0.75 * s),
+        mesh(geos.cone, mats.leafMap, 0, 1.55 * s, 0, 1.15 * s, 1.7 * s, 1.15 * s),
+        mesh(geos.cone, mats.leafMap, 0, 2.15 * s, 0, 0.75 * s, 1.2 * s, 0.75 * s),
       ]);
     case "leafy-tree":
       return assemble(kit, [
         mesh(geos.cylinder, mats.bark, 0, 0.5 * s, 0, 0.26 * s, 1.0 * s, 0.26 * s),
-        mesh(geos.sphere, mats.leaf, 0, 1.55 * s, 0, 1.45 * s, 1.2 * s, 1.45 * s),
-        mesh(geos.sphere, mats.leafDark, 0.28 * s, 1.35 * s, -0.18 * s, 0.9 * s, 0.8 * s, 0.9 * s),
+        mesh(geos.sphere, mats.leafMap, 0, 1.55 * s, 0, 1.45 * s, 1.2 * s, 1.45 * s),
+        mesh(geos.sphere, mats.leafMap, 0.28 * s, 1.35 * s, -0.18 * s, 0.9 * s, 0.8 * s, 0.9 * s),
+      ]);
+    case "maple-tree":
+      return assemble(kit, [
+        mesh(geos.cylinder, mats.bark, 0, 0.55 * s, 0, 0.28 * s, 1.1 * s, 0.28 * s),
+        mesh(geos.sphere, mats.mapleMap, 0, 1.7 * s, 0, 1.6 * s, 1.35 * s, 1.6 * s),
+      ]);
+    case "yew-tree":
+      return assemble(kit, [
+        mesh(geos.cylinder, mats.barkDark, 0, 0.7 * s, 0, 0.32 * s, 1.4 * s, 0.32 * s),
+        mesh(geos.sphere, mats.yewMap, 0, 2.05 * s, 0, 1.85 * s, 1.6 * s, 1.85 * s),
       ]);
     case "palm":
       return assemble(kit, [
@@ -156,13 +192,13 @@ function makeStyle(kit, style, objectId) {
       ]);
     case "dead-tree":
       return assemble(kit, [
-        mesh(geos.cylinder, mats.barkDark, 0, 0.7 * s, 0, 0.18 * s, 1.4 * s, 0.18 * s),
-        mesh(geos.box, mats.barkDark, 0.28 * s, 1.15 * s, 0, 0.55 * s, 0.1 * s, 0.1 * s),
-        mesh(geos.box, mats.barkDark, -0.18 * s, 1.35 * s, 0.12 * s, 0.4 * s, 0.08 * s, 0.08 * s),
+        mesh(geos.cylinder, mats.deadMap, 0, 0.7 * s, 0, 0.18 * s, 1.4 * s, 0.18 * s),
+        mesh(geos.box, mats.deadMap, 0.28 * s, 1.15 * s, 0, 0.55 * s, 0.1 * s, 0.1 * s),
+        mesh(geos.box, mats.deadMap, -0.18 * s, 1.35 * s, 0.12 * s, 0.4 * s, 0.08 * s, 0.08 * s),
       ]);
     case "stump":
       return assemble(kit, [
-        mesh(geos.cylinder, mats.stump, 0, 0.22, 0, 0.42, 0.44, 0.42),
+        mesh(geos.cylinder, mats.stumpMap, 0, 0.22, 0, 0.42, 0.44, 0.42),
       ]);
     case "fern":
       return assemble(kit, [

@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 5173",
     "generate-player-sprites": "node scripts/generate-player-sprites.cjs",
     "dump-rsc-sprites": "node scripts/dump-rsc-sprites.mjs",
+    "dump-npc-sprites": "node scripts/dump-npc-sprites.mjs",
     "dump-scenery": "node scripts/dump-scenery.mjs",
     "export-landscape": "node src/landscape/landscape.cjs"
   },
