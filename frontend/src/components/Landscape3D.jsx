@@ -31,6 +31,13 @@ function colourAt(data, index) {
 }
 
 function heightAt(data, x, z) {
+  if (x >= 0 && z >= 0 && x < data.width && z < data.depth) {
+    return data.heights[z * data.width + x] * data.heightScale;
+  }
+  if (typeof data.heightBeyond === "function") {
+    const outside = data.heightBeyond(x, z);
+    if (outside != null) return outside;
+  }
   const clampedX = Math.max(0, Math.min(data.width - 1, x));
   const clampedZ = Math.max(0, Math.min(data.depth - 1, z));
   return data.heights[clampedZ * data.width + clampedX] * data.heightScale;
@@ -642,10 +649,27 @@ function attachSectorDoors(view, record) {
   }
 }
 
-function mountSector(view, data) {
+function bindNeighborHeights(view, data, origin) {
+  const plane = data.plane ?? 0;
+  data.heightBeyond = (x, z) => {
+    const coords = sectorCoordsAt(origin.x + x, origin.z + z);
+    const record = view.mounted.get(sectorKey(plane, coords.sectorX, coords.sectorY));
+    if (!record) return null;
+    const { localX, localZ } = coords;
+    const sector = record.data;
+    if (localX < 0 || localZ < 0 || localX >= sector.width || localZ >= sector.depth) return null;
+    return sector.heights[localZ * sector.width + localX] * sector.heightScale;
+  };
+}
+
+function mountSector(view, data, { rebuild = false, refreshNeighbors = true } = {}) {
   const key = sectorKey(data.plane ?? 0, data.sectorX, data.sectorY);
-  if (view.mounted.has(key)) return;
+  if (view.mounted.has(key)) {
+    if (!rebuild) return;
+    unmountSector(view, key);
+  }
   const origin = sectorOrigin(data.sectorX, data.sectorY);
+  bindNeighborHeights(view, data, origin);
   const group = new THREE.Group();
   group.name = `sector-${key}`;
   group.position.set(origin.x, 0, origin.z);
@@ -671,6 +695,15 @@ function mountSector(view, data) {
   const record = { key, data, origin, group, roofs, doors: [] };
   view.mounted.set(key, record);
   attachSectorDoors(view, record);
+  if (!refreshNeighbors) return;
+  const plane = data.plane ?? 0;
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dz = -1; dz <= 1; dz += 1) {
+      if (dx === 0 && dz === 0) continue;
+      const neighbor = view.mounted.get(sectorKey(plane, data.sectorX + dx, data.sectorY + dz));
+      if (neighbor) mountSector(view, neighbor.data, { rebuild: true, refreshNeighbors: false });
+    }
+  }
 }
 
 function unmountSector(view, key) {
