@@ -43,6 +43,47 @@ function heightAt(data, x, z) {
   return data.heights[clampedZ * data.width + clampedX] * data.heightScale;
 }
 
+const LIQUID_OVERLAYS = new Set([2, 7, 11, 19, 25]);
+
+function tileSample(data, x, z) {
+  if (x >= 0 && z >= 0 && x < data.width && z < data.depth) {
+    const index = z * data.width + x;
+    return { overlay: data.overlays?.[index] || 0, colour: colourAt(data, index) };
+  }
+  return data.tileBeyond?.(x, z) ?? null;
+}
+
+function averageColour(samples) {
+  if (!samples.length) return null;
+  const sum = [0, 0, 0];
+  for (const colour of samples) {
+    sum[0] += colour[0];
+    sum[1] += colour[1];
+    sum[2] += colour[2];
+  }
+  return sum.map((channel) => channel / samples.length);
+}
+
+function cornerColour(data, tileX, tileZ, cornerX, cornerZ) {
+  const own = tileSample(data, tileX, tileZ);
+  const around = [
+    tileSample(data, cornerX - 1, cornerZ - 1),
+    tileSample(data, cornerX, cornerZ - 1),
+    tileSample(data, cornerX - 1, cornerZ),
+    tileSample(data, cornerX, cornerZ),
+  ].filter(Boolean);
+  const shore = around.filter(
+    (tile) => tile.overlay === 0 || LIQUID_OVERLAYS.has(tile.overlay),
+  );
+  const hasLiquid = shore.some((tile) => LIQUID_OVERLAYS.has(tile.overlay));
+  const hasGrass = shore.some((tile) => tile.overlay === 0);
+  const ownIsShore = own && (own.overlay === 0 || LIQUID_OVERLAYS.has(own.overlay));
+  if (ownIsShore && hasLiquid && hasGrass) {
+    return averageColour(shore.map((tile) => tile.colour));
+  }
+  return own?.colour;
+}
+
 function buildTerrain(data) {
   const positions = [];
   const colours = [];
@@ -51,12 +92,14 @@ function buildTerrain(data) {
 
   for (let z = 0; z < data.depth; z += 1) {
     for (let x = 0; x < data.width; x += 1) {
-      const tileIndex = z * data.width + x;
-      const colour = colourAt(data, tileIndex);
       const h00 = heightAt(data, x, z);
       const h10 = heightAt(data, x + 1, z);
       const h01 = heightAt(data, x, z + 1);
       const h11 = heightAt(data, x + 1, z + 1);
+      const sw = cornerColour(data, x, z, x, z);
+      const se = cornerColour(data, x, z, x + 1, z);
+      const nw = cornerColour(data, x, z, x, z + 1);
+      const ne = cornerColour(data, x, z, x + 1, z + 1);
 
       positions.push(
         x, h00, z,
@@ -65,8 +108,8 @@ function buildTerrain(data) {
         x + 1, h11, z + 1,
       );
 
-      // Four independent vertices per tile preserve RSC's tile colours.
-      for (let i = 0; i < 4; i += 1) colours.push(...colour);
+      // Corners blend grass and water so the shoreline fades instead of stepping.
+      colours.push(...sw, ...se, ...nw, ...ne);
       indices.push(vertex, vertex + 2, vertex + 1);
       indices.push(vertex + 1, vertex + 2, vertex + 3);
       vertex += 4;
@@ -649,16 +692,32 @@ function attachSectorDoors(view, record) {
   }
 }
 
+function neighborTile(view, plane, origin, x, z) {
+  const coords = sectorCoordsAt(origin.x + x, origin.z + z);
+  const record = view.mounted.get(sectorKey(plane, coords.sectorX, coords.sectorY));
+  if (!record) return null;
+  const { localX, localZ } = coords;
+  const sector = record.data;
+  if (localX < 0 || localZ < 0 || localX >= sector.width || localZ >= sector.depth) return null;
+  const index = localZ * sector.width + localX;
+  return { sector, index };
+}
+
 function bindNeighborHeights(view, data, origin) {
   const plane = data.plane ?? 0;
   data.heightBeyond = (x, z) => {
-    const coords = sectorCoordsAt(origin.x + x, origin.z + z);
-    const record = view.mounted.get(sectorKey(plane, coords.sectorX, coords.sectorY));
-    if (!record) return null;
-    const { localX, localZ } = coords;
-    const sector = record.data;
-    if (localX < 0 || localZ < 0 || localX >= sector.width || localZ >= sector.depth) return null;
-    return sector.heights[localZ * sector.width + localX] * sector.heightScale;
+    const hit = neighborTile(view, plane, origin, x, z);
+    if (!hit) return null;
+    return hit.sector.heights[hit.index] * hit.sector.heightScale;
+  };
+  data.tileBeyond = (x, z) => {
+    const hit = neighborTile(view, plane, origin, x, z);
+    if (!hit) return null;
+    const [r, g, b] = hit.sector.palette[hit.sector.colours[hit.index]] || [60, 90, 45];
+    return {
+      overlay: hit.sector.overlays?.[hit.index] || 0,
+      colour: [r / 255, g / 255, b / 255],
+    };
   };
 }
 
