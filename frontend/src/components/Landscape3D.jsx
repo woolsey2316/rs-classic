@@ -702,6 +702,15 @@ function attachSectorDoors(view, record) {
   const open = localOpenDoors(view.openDoors, record.data);
   for (const mesh of buildDoorMeshes(record.data, view.defs, view.rscTextures, open)) {
     mesh.position.set(record.origin.x, 0, record.origin.z);
+    const [x1, z1, x2, z2, elevation, wallId] = mesh.userData.door.wall;
+    mesh.userData.door.wall = [
+      record.origin.x + x1,
+      record.origin.z + z1,
+      record.origin.x + x2,
+      record.origin.z + z2,
+      elevation,
+      wallId,
+    ];
     mesh.userData.door.index = `${record.data.sectorX},${record.data.sectorY},${record.data.plane}:${mesh.userData.door.index}`;
     view.doorsGroup.add(mesh);
     record.doors.push(mesh);
@@ -1079,6 +1088,14 @@ export default function Landscape3D({
             return;
           }
           if (hit.type === "door") {
+            if (viewRef.current) {
+              viewRef.current.clickAnim = {
+                startedAt: performance.now(),
+                clientX: event.clientX,
+                clientY: event.clientY,
+                red: true,
+              };
+            }
             handlersRef.current.onDoorClick?.(hit.door);
             return;
           }
